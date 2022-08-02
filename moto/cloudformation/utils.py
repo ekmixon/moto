@@ -9,9 +9,7 @@ from moto.core import ACCOUNT_ID
 
 def generate_stack_id(stack_name, region="us-east-1", account="123456789"):
     random_id = uuid.uuid4()
-    return "arn:aws:cloudformation:{}:{}:stack/{}/{}".format(
-        region, account, stack_name, random_id
-    )
+    return f"arn:aws:cloudformation:{region}:{account}:stack/{stack_name}/{random_id}"
 
 
 def generate_changeset_id(changeset_name, region_name):
@@ -23,19 +21,17 @@ def generate_changeset_id(changeset_name, region_name):
 
 def generate_stackset_id(stackset_name):
     random_id = uuid.uuid4()
-    return "{}:{}".format(stackset_name, random_id)
+    return f"{stackset_name}:{random_id}"
 
 
 def generate_stackset_arn(stackset_id, region_name):
-    return "arn:aws:cloudformation:{}:{}:stackset/{}".format(
-        region_name, ACCOUNT_ID, stackset_id
-    )
+    return f"arn:aws:cloudformation:{region_name}:{ACCOUNT_ID}:stackset/{stackset_id}"
 
 
 def random_suffix():
     size = 12
     chars = list(range(10)) + list(string.ascii_uppercase)
-    return "".join(str(random.choice(chars)) for x in range(size))
+    return "".join(str(random.choice(chars)) for _ in range(size))
 
 
 def yaml_tag_constructor(loader, tag, node):
@@ -43,19 +39,13 @@ def yaml_tag_constructor(loader, tag, node):
 
     def _f(loader, tag, node):
         if tag == "!GetAtt":
-            if isinstance(node.value, list):
-                return node.value
-            return node.value.split(".")
+            return node.value if isinstance(node.value, list) else node.value.split(".")
         elif type(node) == yaml.SequenceNode:
             return loader.construct_sequence(node)
         else:
             return node.value
 
-    if tag == "!Ref":
-        key = "Ref"
-    else:
-        key = "Fn::{}".format(tag[1:])
-
+    key = "Ref" if tag == "!Ref" else "Fn::{}".format(tag[1:])
     return {key: _f(loader, tag, node)}
 
 

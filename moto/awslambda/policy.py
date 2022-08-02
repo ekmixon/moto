@@ -59,7 +59,7 @@ class Policy:
 
         # set some default values if these keys are not set
         self.ensure_set(obj, "Effect", "Allow")
-        self.ensure_set(obj, "Resource", self.parent.function_arn + ":$LATEST")
+        self.ensure_set(obj, "Resource", f"{self.parent.function_arn}:$LATEST")
         self.ensure_set(obj, "StatementId", str(uuid.uuid4()))
 
         # transform field names and values

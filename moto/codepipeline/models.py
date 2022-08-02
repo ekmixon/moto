@@ -99,10 +99,9 @@ class CodePipelineBackend(BaseBackend):
                 raise IAMNotFoundException("")
         except IAMNotFoundException:
             raise InvalidStructureException(
-                "CodePipeline is not authorized to perform AssumeRole on role {}".format(
-                    pipeline["roleArn"]
-                )
+                f'CodePipeline is not authorized to perform AssumeRole on role {pipeline["roleArn"]}'
             )
+
 
         if len(pipeline["stages"]) < 2:
             raise InvalidStructureException(
@@ -120,16 +119,14 @@ class CodePipelineBackend(BaseBackend):
         return pipeline, sorted(tags, key=lambda i: i["key"])
 
     def get_pipeline(self, name):
-        codepipeline = self.pipelines.get(name)
-
-        if not codepipeline:
+        if codepipeline := self.pipelines.get(name):
+            return codepipeline.pipeline, codepipeline.metadata
+        else:
             raise PipelineNotFoundException(
                 "Account '{0}' does not have a pipeline with name '{1}'".format(
                     ACCOUNT_ID, name
                 )
             )
-
-        return codepipeline.pipeline, codepipeline.metadata
 
     def update_pipeline(self, pipeline):
         codepipeline = self.pipelines.get(pipeline["name"])
@@ -149,17 +146,16 @@ class CodePipelineBackend(BaseBackend):
         return codepipeline.pipeline
 
     def list_pipelines(self):
-        pipelines = []
+        pipelines = [
+            {
+                "name": name,
+                "version": codepipeline.pipeline["version"],
+                "created": codepipeline.metadata["created"],
+                "updated": codepipeline.metadata["updated"],
+            }
+            for name, codepipeline in self.pipelines.items()
+        ]
 
-        for name, codepipeline in self.pipelines.items():
-            pipelines.append(
-                {
-                    "name": name,
-                    "version": codepipeline.pipeline["version"],
-                    "created": codepipeline.metadata["created"],
-                    "updated": codepipeline.metadata["updated"],
-                }
-            )
 
         return sorted(pipelines, key=lambda i: i["name"])
 
@@ -212,9 +208,11 @@ class CodePipelineBackend(BaseBackend):
             pipeline.tags.pop(key, None)
 
 
-codepipeline_backends = {}
-for region in Session().get_available_regions("codepipeline"):
-    codepipeline_backends[region] = CodePipelineBackend()
+codepipeline_backends = {
+    region: CodePipelineBackend()
+    for region in Session().get_available_regions("codepipeline")
+}
+
 for region in Session().get_available_regions(
     "codepipeline", partition_name="aws-us-gov"
 ):

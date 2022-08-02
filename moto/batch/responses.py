@@ -32,9 +32,7 @@ class BatchResponse(BaseResponse):
 
     def _get_param(self, param_name, if_none=None):
         val = self.json.get(param_name)
-        if val is not None:
-            return val
-        return if_none
+        return val if val is not None else if_none
 
     def _get_action(self):
         # Return element after the /v1/*

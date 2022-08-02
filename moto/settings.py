@@ -45,10 +45,7 @@ def moto_server_port():
 
 def moto_server_host():
     _port = moto_server_port()
-    if is_docker():
-        host = get_docker_host()
-    else:
-        host = "http://host.docker.internal"
+    host = get_docker_host() if is_docker() else "http://host.docker.internal"
     return f"{host}:{_port}"
 
 

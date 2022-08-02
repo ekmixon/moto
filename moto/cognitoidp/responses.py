@@ -36,11 +36,10 @@ class CognitoIdpResponse(BaseResponse):
                 raise InvalidParameterException(
                     "At least one of [SmsMfaConfiguration] or [SoftwareTokenMfaConfiguration] must be provided."
                 )
-            if sms_config is not None:
-                if "SmsConfiguration" not in sms_config:
-                    raise InvalidParameterException(
-                        "[SmsConfiguration] is a required member of [SoftwareTokenMfaConfiguration]."
-                    )
+            if sms_config is not None and "SmsConfiguration" not in sms_config:
+                raise InvalidParameterException(
+                    "[SmsConfiguration] is a required member of [SoftwareTokenMfaConfiguration]."
+                )
 
         response = cognitoidp_backends[self.region].set_user_pool_mfa_config(
             user_pool_id, sms_config, token_config, mfa_config
@@ -87,20 +86,18 @@ class CognitoIdpResponse(BaseResponse):
         user_pool_domain = cognitoidp_backends[self.region].create_user_pool_domain(
             user_pool_id, domain, custom_domain_config
         )
-        domain_description = user_pool_domain.to_json(extended=False)
-        if domain_description:
+        if domain_description := user_pool_domain.to_json(extended=False):
             return json.dumps(domain_description)
         return ""
 
     def describe_user_pool_domain(self):
         domain = self._get_param("Domain")
-        user_pool_domain = cognitoidp_backends[self.region].describe_user_pool_domain(
-            domain
-        )
-        domain_description = {}
-        if user_pool_domain:
+        if user_pool_domain := cognitoidp_backends[
+            self.region
+        ].describe_user_pool_domain(domain):
             domain_description = user_pool_domain.to_json()
-
+        else:
+            domain_description = {}
         return json.dumps({"DomainDescription": domain_description})
 
     def delete_user_pool_domain(self):
@@ -114,8 +111,7 @@ class CognitoIdpResponse(BaseResponse):
         user_pool_domain = cognitoidp_backends[self.region].update_user_pool_domain(
             domain, custom_domain_config
         )
-        domain_description = user_pool_domain.to_json(extended=False)
-        if domain_description:
+        if domain_description := user_pool_domain.to_json(extended=False):
             return json.dumps(domain_description)
         return ""
 
@@ -365,8 +361,7 @@ class CognitoIdpResponse(BaseResponse):
                 "sub",
             ]
 
-            match = re.match(r"([\w:]+)\s*(=|\^=)\s*\"(.*)\"", filt)
-            if match:
+            if match := re.match(r"([\w:]+)\s*(=|\^=)\s*\"(.*)\"", filt):
                 name, op, value = match.groups()
             else:
                 raise InvalidParameterException("Error while parsing filter")

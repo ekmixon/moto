@@ -173,8 +173,9 @@ def mock_all():
         for d in dir(sys.modules["moto"])
         if d.startswith("mock_")
         and not d.endswith("_deprecated")
-        and not d == "mock_all"
+        and d != "mock_all"
     ]
+
 
     def deco(f):
         for dec_name in reversed(dec_names):

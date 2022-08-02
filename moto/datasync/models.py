@@ -187,14 +187,13 @@ class DataSyncBackend(BaseBackend):
             raise InvalidRequestException
 
     def update_task(self, task_arn, name, metadata):
-        if task_arn in self.tasks:
-            task = self.tasks[task_arn]
-            task.name = name
-            task.metadata = metadata
-        else:
+        if task_arn not in self.tasks:
             raise InvalidRequestException(
                 "Sync task {0} is not found.".format(task_arn)
             )
+        task = self.tasks[task_arn]
+        task.name = name
+        task.metadata = metadata
 
     def delete_task(self, task_arn):
         if task_arn in self.tasks:
@@ -233,9 +232,11 @@ class DataSyncBackend(BaseBackend):
         )
 
 
-datasync_backends = {}
-for region in Session().get_available_regions("datasync"):
-    datasync_backends[region] = DataSyncBackend(region)
+datasync_backends = {
+    region: DataSyncBackend(region)
+    for region in Session().get_available_regions("datasync")
+}
+
 for region in Session().get_available_regions("datasync", partition_name="aws-us-gov"):
     datasync_backends[region] = DataSyncBackend(region)
 for region in Session().get_available_regions("datasync", partition_name="aws-cn"):

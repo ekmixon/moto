@@ -34,13 +34,9 @@ def filter_tasks(tasks, filters):
     matching_tasks = tasks
 
     for f in filters:
-        filter_function = task_filter_functions[f["Name"]]
-
-        if not filter_function:
-            continue
-
-        matching_tasks = filter(
-            lambda task: filter_function(task, f["Values"]), matching_tasks
-        )
+        if filter_function := task_filter_functions[f["Name"]]:
+            matching_tasks = filter(
+                lambda task: filter_function(task, f["Values"]), matching_tasks
+            )
 
     return matching_tasks

@@ -180,7 +180,7 @@ class CloudTrailBackend(BaseBackend):
 
     def __init__(self, region_name):
         self.region_name = region_name
-        self.trails = dict()
+        self.trails = {}
 
     def create_trail(
         self,
@@ -261,9 +261,11 @@ class CloudTrailBackend(BaseBackend):
         self.__init__(region_name)
 
 
-cloudtrail_backends = {}
-for available_region in Session().get_available_regions("cloudtrail"):
-    cloudtrail_backends[available_region] = CloudTrailBackend(available_region)
+cloudtrail_backends = {
+    available_region: CloudTrailBackend(available_region)
+    for available_region in Session().get_available_regions("cloudtrail")
+}
+
 for available_region in Session().get_available_regions(
     "cloudtrail", partition_name="aws-us-gov"
 ):

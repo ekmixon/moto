@@ -54,12 +54,15 @@ class DynamoType(object):
         if self.is_list():
             self.value = [DynamoType(val) for val in self.value]
         elif self.is_map():
-            self.value = dict((k, DynamoType(v)) for k, v in self.value.items())
+            self.value = {k: DynamoType(v) for k, v in self.value.items()}
 
     def filter(self, projection_expressions):
         nested_projections = [
-            expr[0 : expr.index(".")] for expr in projection_expressions if "." in expr
+            expr[: expr.index(".")]
+            for expr in projection_expressions
+            if "." in expr
         ]
+
         if self.is_map():
             expressions_to_delete = []
             for attr in self.value:
@@ -70,10 +73,11 @@ class DynamoType(object):
                     expressions_to_delete.append(attr)
                 elif attr in nested_projections:
                     relevant_expressions = [
-                        expr[len(attr + ".") :]
+                        expr[len(f"{attr}.") :]
                         for expr in projection_expressions
-                        if expr.startswith(attr + ".")
+                        if expr.startswith(f"{attr}.")
                     ]
+
                     self.value[attr].filter(relevant_expressions)
             for expr in expressions_to_delete:
                 self.value.pop(expr)
@@ -105,36 +109,34 @@ class DynamoType(object):
     def __add__(self, other):
         if self.type != other.type:
             raise TypeError("Different types of operandi is not allowed.")
-        if self.is_number():
-            self_value = float(self.value) if "." in self.value else int(self.value)
-            other_value = float(other.value) if "." in other.value else int(other.value)
-            return DynamoType(
-                {DDBType.NUMBER: "{v}".format(v=self_value + other_value)}
-            )
-        else:
+        if not self.is_number():
             raise IncorrectDataType()
+        self_value = float(self.value) if "." in self.value else int(self.value)
+        other_value = float(other.value) if "." in other.value else int(other.value)
+        return DynamoType(
+            {DDBType.NUMBER: "{v}".format(v=self_value + other_value)}
+        )
 
     def __sub__(self, other):
         if self.type != other.type:
             raise TypeError("Different types of operandi is not allowed.")
-        if self.type == DDBType.NUMBER:
-            self_value = float(self.value) if "." in self.value else int(self.value)
-            other_value = float(other.value) if "." in other.value else int(other.value)
-            return DynamoType(
-                {DDBType.NUMBER: "{v}".format(v=self_value - other_value)}
-            )
-        else:
+        if self.type != DDBType.NUMBER:
             raise TypeError("Sum only supported for Numbers.")
+        self_value = float(self.value) if "." in self.value else int(self.value)
+        other_value = float(other.value) if "." in other.value else int(other.value)
+        return DynamoType(
+            {DDBType.NUMBER: "{v}".format(v=self_value - other_value)}
+        )
 
     def __getitem__(self, item):
-        if isinstance(item, str):
-            # If our DynamoType is a map it should be subscriptable with a key
-            if self.type == DDBType.MAP:
-                return self.value[item]
-        elif isinstance(item, int):
-            # If our DynamoType is a list is should be subscriptable with an index
-            if self.type == DDBType.LIST:
-                return self.value[item]
+        if (
+            isinstance(item, str)
+            and self.type == DDBType.MAP
+            or not isinstance(item, str)
+            and isinstance(item, int)
+            and self.type == DDBType.LIST
+        ):
+            return self.value[item]
         raise TypeError(
             "This DynamoType {dt} is not subscriptable by a {it}".format(
                 dt=self.type, it=type(item)
@@ -164,7 +166,7 @@ class DynamoType(object):
                 return float(self.value)
         elif self.is_set():
             sub_type = self.type[0]
-            return set([DynamoType({sub_type: v}).cast_value for v in self.value])
+            return {DynamoType({sub_type: v}).cast_value for v in self.value}
         elif self.is_list():
             return [DynamoType(v).cast_value for v in self.value]
         elif self.is_map():
@@ -178,9 +180,8 @@ class DynamoType(object):
 
         Returns DynamoType or None.
         """
-        if isinstance(key, str) and self.is_map():
-            if key in self.value:
-                return DynamoType(self.value[key])
+        if isinstance(key, str) and self.is_map() and key in self.value:
+            return DynamoType(self.value[key])
 
         if isinstance(key, int) and self.is_list():
             idx = key
@@ -191,21 +192,18 @@ class DynamoType(object):
 
     def size(self):
         if self.is_number():
-            value_size = len(str(self.value))
+            return len(str(self.value))
         elif self.is_set():
             sub_type = self.type[0]
-            value_size = sum([DynamoType({sub_type: v}).size() for v in self.value])
+            return sum(DynamoType({sub_type: v}).size() for v in self.value)
         elif self.is_list():
-            value_size = sum([v.size() for v in self.value])
+            return sum(v.size() for v in self.value)
         elif self.is_map():
-            value_size = sum(
-                [bytesize(k) + DynamoType(v).size() for k, v in self.value.items()]
-            )
+            return sum(bytesize(k) + DynamoType(v).size() for k, v in self.value.items())
         elif type(self.value) == bool:
-            value_size = 1
+            return 1
         else:
-            value_size = bytesize(self.value)
-        return value_size
+            return bytesize(self.value)
 
     def to_json(self):
         return {self.type: self.value}

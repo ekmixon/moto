@@ -52,7 +52,7 @@ class BaseMockAWS:
             "instance_metadata": instance_metadata_backend,
             "moto_api": moto_api_backend,
         }
-        self.backends_for_urls.update(self.backends)
+        self.backends_for_urls |= self.backends
         self.backends_for_urls.update(default_backends)
 
         self.FAKE_KEYS = {
@@ -234,8 +234,9 @@ class CallbackResponse(responses.CallbackResponse):
                 base_url="{scheme}://{netloc}".format(
                     scheme=url.scheme, netloc=url.netloc
                 ),
-                headers=[(k, v) for k, v in request.headers.items()],
+                headers=list(request.headers.items()),
             )
+
             request = req
         headers = self.get_headers()
 
@@ -288,18 +289,13 @@ responses_mock.add_passthru("http")
 
 
 def _find_first_match_legacy(self, request):
-    matches = []
-    for i, match in enumerate(self._matches):
-        if match.matches(request):
-            matches.append(match)
-
-    # Look for implemented callbacks first
-    implemented_matches = [
+    matches = [match for match in self._matches if match.matches(request)]
+    if implemented_matches := [
         m
         for m in matches
-        if type(m) is not CallbackResponse or m.callback != not_implemented_callback
-    ]
-    if implemented_matches:
+        if type(m) is not CallbackResponse
+        or m.callback != not_implemented_callback
+    ]:
         return implemented_matches[0]
     elif matches:
         # We had matches, but all were of type not_implemented_callback
@@ -310,20 +306,19 @@ def _find_first_match_legacy(self, request):
 def _find_first_match(self, request):
     matches = []
     match_failed_reasons = []
-    for i, match in enumerate(self._matches):
+    for match in self._matches:
         match_result, reason = match.matches(request)
         if match_result:
             matches.append(match)
         else:
             match_failed_reasons.append(reason)
 
-    # Look for implemented callbacks first
-    implemented_matches = [
+    if implemented_matches := [
         m
         for m in matches
-        if type(m) is not CallbackResponse or m.callback != not_implemented_callback
-    ]
-    if implemented_matches:
+        if type(m) is not CallbackResponse
+        or m.callback != not_implemented_callback
+    ]:
         return implemented_matches[0], []
     elif matches:
         # We had matches, but all were of type not_implemented_callback
@@ -356,10 +351,8 @@ class MockRawResponse(BytesIO):
         super(MockRawResponse, self).__init__(input)
 
     def stream(self, **kwargs):
-        contents = self.read()
-        while contents:
+        while contents := self.read():
             yield contents
-            contents = self.read()
 
 
 class BotocoreStubber:
@@ -530,9 +523,9 @@ class ServerModeMockAWS(BaseMockAWS):
             region = self._get_region(*args, **kwargs)
             if region:
                 if "config" in kwargs:
-                    kwargs["config"].__dict__["user_agent_extra"] += " region/" + region
+                    kwargs["config"].__dict__["user_agent_extra"] += f" region/{region}"
                 else:
-                    config = Config(user_agent_extra="region/" + region)
+                    config = Config(user_agent_extra=f"region/{region}")
                     kwargs["config"] = config
             if "endpoint_url" not in kwargs:
                 kwargs["endpoint_url"] = "http://localhost:5000"
@@ -567,11 +560,10 @@ class Model(type):
         cls = super(Model, self).__new__(self, clsname, bases, namespace)
         cls.__models__ = {}
         for name, value in namespace.items():
-            model = getattr(value, "__returns_model__", False)
-            if model is not False:
+            if model := getattr(value, "__returns_model__", False):
                 cls.__models__[model] = name
         for base in bases:
-            cls.__models__.update(getattr(base, "__models__", {}))
+            cls.__models__ |= getattr(base, "__models__", {})
         return cls
 
     @staticmethod
@@ -691,10 +683,9 @@ class BaseBackend:
     def _url_module(self):
         backend_module = self.__class__.__module__
         backend_urls_module_name = backend_module.replace("models", "urls")
-        backend_urls_module = __import__(
+        return __import__(
             backend_urls_module_name, fromlist=["url_bases", "url_paths"]
         )
-        return backend_urls_module
 
     @property
     def urls(self):
@@ -762,7 +753,7 @@ class BaseBackend:
     @staticmethod
     def vpce_random_number():
         """Return random number for a VPC endpoint service ID."""
-        return "".join([random.choice(string.hexdigits.lower()) for i in range(17)])
+        return "".join([random.choice(string.hexdigits.lower()) for _ in range(17)])
 
     @staticmethod
     def default_vpc_endpoint_service_factory(
@@ -815,10 +806,7 @@ class BaseBackend:
         else:
             mocked_backend = MockAWS({"global": self})
 
-        if func:
-            return mocked_backend(func)
-        else:
-            return mocked_backend
+        return mocked_backend(func) if func else mocked_backend
 
     def deprecated_decorator(self, func=None):
         if func:
@@ -936,10 +924,7 @@ class base_decorator:
         else:
             mocked_backend = self.mock_backend(self.backends)
 
-        if func:
-            return mocked_backend(func)
-        else:
-            return mocked_backend
+        return mocked_backend(func) if func else mocked_backend
 
 
 class deprecated_base_decorator(base_decorator):

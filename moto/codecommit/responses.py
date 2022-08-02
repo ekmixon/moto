@@ -47,11 +47,9 @@ class CodeCommitResponse(BaseResponse):
         if not _is_repository_name_valid(self._get_param("repositoryName")):
             raise InvalidRepositoryNameException()
 
-        repository_id = self.codecommit_backend.delete_repository(
+        if repository_id := self.codecommit_backend.delete_repository(
             self._get_param("repositoryName")
-        )
-
-        if repository_id:
+        ):
             return json.dumps({"repositoryId": repository_id})
 
         return json.dumps({})

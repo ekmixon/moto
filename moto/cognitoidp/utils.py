@@ -42,7 +42,7 @@ PAGINATION_MODEL = {
 def create_id():
     size = 26
     chars = list(range(10)) + list(string.ascii_lowercase)
-    return "".join(str(random.choice(chars)) for x in range(size))
+    return "".join(str(random.choice(chars)) for _ in range(size))
 
 
 def check_secret_hash(app_client_secret, app_client_id, username, secret_hash):

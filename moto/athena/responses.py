@@ -17,16 +17,18 @@ class AthenaResponse(BaseResponse):
         work_group = self.athena_backend.create_work_group(
             name, configuration, description, tags
         )
-        if not work_group:
-            return self.error("WorkGroup already exists", 400)
-        return json.dumps(
-            {
-                "CreateWorkGroupResponse": {
-                    "ResponseMetadata": {
-                        "RequestId": "384ac68d-3775-11df-8963-01868b7c937a"
+        return (
+            json.dumps(
+                {
+                    "CreateWorkGroupResponse": {
+                        "ResponseMetadata": {
+                            "RequestId": "384ac68d-3775-11df-8963-01868b7c937a"
+                        }
                     }
                 }
-            }
+            )
+            if work_group
+            else self.error("WorkGroup already exists", 400)
         )
 
     def list_work_groups(self):

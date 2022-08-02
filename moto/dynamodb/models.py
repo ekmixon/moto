@@ -70,18 +70,21 @@ class Item(BaseModel):
         return "Item: {0}".format(self.to_json())
 
     def to_json(self):
-        attributes = {}
-        for attribute_key, attribute in self.attrs.items():
-            attributes[attribute_key] = attribute.value
+        attributes = {
+            attribute_key: attribute.value
+            for attribute_key, attribute in self.attrs.items()
+        }
 
         return {"Attributes": attributes}
 
     def describe_attrs(self, attributes):
         if attributes:
-            included = {}
-            for key, value in self.attrs.items():
-                if key in attributes:
-                    included[key] = value
+            included = {
+                key: value
+                for key, value in self.attrs.items()
+                if key in attributes
+            }
+
         else:
             included = self.attrs
         return {"Item": included}
@@ -174,13 +177,10 @@ class Table(CloudFormationModel):
         return Table(**spec)
 
     def __len__(self):
-        count = 0
-        for key, value in self.items.items():
-            if self.has_range_key:
-                count += len(value)
-            else:
-                count += 1
-        return count
+        return sum(
+            len(value) if self.has_range_key else 1
+            for key, value in self.items.items()
+        )
 
     def __nonzero__(self):
         return True
@@ -211,10 +211,7 @@ class Table(CloudFormationModel):
                 "Table has a range key, but no range key was passed into get_item"
             )
         try:
-            if range_key:
-                return self.items[hash_key][range_key]
-            else:
-                return self.items[hash_key]
+            return self.items[hash_key][range_key] if range_key else self.items[hash_key]
         except KeyError:
             return None
 
@@ -228,9 +225,12 @@ class Table(CloudFormationModel):
             possible_results = list(self.all_items())
 
         if range_comparison:
-            for result in possible_results:
-                if result.range_key.compare(range_comparison, range_objs):
-                    results.append(result)
+            results.extend(
+                result
+                for result in possible_results
+                if result.range_key.compare(range_comparison, range_objs)
+            )
+
         else:
             # If we're not filtering on range key, return all values
             results = possible_results
@@ -239,8 +239,7 @@ class Table(CloudFormationModel):
     def all_items(self):
         for hash_set in self.items.values():
             if self.range_key_attr:
-                for item in hash_set.values():
-                    yield item
+                yield from hash_set.values()
             else:
                 yield hash_set
 
@@ -256,9 +255,7 @@ class Table(CloudFormationModel):
                 attribute_name,
                 (comparison_operator, comparison_objs),
             ) in filters.items():
-                attribute = result.attrs.get(attribute_name)
-
-                if attribute:
+                if attribute := result.attrs.get(attribute_name):
                     # Attribute found
                     if not attribute.compare(comparison_operator, comparison_objs):
                         passes_all_conditions = False
@@ -336,10 +333,7 @@ class DynamoDBBackend(BaseBackend):
 
     def put_item(self, table_name, item_attrs):
         table = self.tables.get(table_name)
-        if not table:
-            return None
-
-        return table.put_item(item_attrs)
+        return table.put_item(item_attrs) if table else None
 
     def get_item(self, table_name, hash_key_dict, range_key_dict):
         table = self.tables.get(table_name)

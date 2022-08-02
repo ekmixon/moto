@@ -94,9 +94,14 @@ class TagHolder(dict):
             tags_copy[key] = value
         if len(tags_copy) > self.MAX_TAG_COUNT:
             raise AWSTooManyTagsException(
-                "the TagSet: '{%s}' contains too many Tags"
-                % ", ".join(k + "=" + str(v or "") for k, v in tags_copy.items())
+                (
+                    "the TagSet: '{%s}' contains too many Tags"
+                    % ", ".join(
+                        f"{k}=" + str(v or "") for k, v in tags_copy.items()
+                    )
+                )
             )
+
 
         self.update(tags_copy)
 
@@ -107,10 +112,7 @@ class TagHolder(dict):
             self._validate_kv(key, value, i + 1)
             try:
                 # If value isnt provided, just delete key
-                if value is None:
-                    del self[key]
-                # If value is provided, only delete if it matches what already exists
-                elif self[key] == value:
+                if value is None or self[key] == value:
                     del self[key]
             except KeyError:
                 pass
@@ -167,11 +169,7 @@ class CertBundle(BaseModel):
 
     @classmethod
     def generate_cert(cls, domain_name, region, sans=None):
-        if sans is None:
-            sans = set()
-        else:
-            sans = set(sans)
-
+        sans = set() if sans is None else set(sans)
         sans.add(domain_name)
         sans = [cryptography.x509.DNSName(item) for item in sans]
 
@@ -352,10 +350,7 @@ class CertBundle(BaseModel):
             )
         except cryptography.x509.ExtensionNotFound:
             san_obj = None
-        sans = []
-        if san_obj is not None:
-            sans = [item.value for item in san_obj.value]
-
+        sans = [item.value for item in san_obj.value] if san_obj is not None else []
         result = {
             "Certificate": {
                 "CertificateArn": self.arn,
@@ -450,13 +445,12 @@ class AWSCertificateManagerBackend(BaseBackend):
         """
         now = datetime.datetime.now()
         if token in self._idempotency_tokens:
-            if self._idempotency_tokens[token]["expires"] < now:
-                # Token has expired, new request
-                del self._idempotency_tokens[token]
-                return None
-            else:
+            if self._idempotency_tokens[token]["expires"] >= now:
                 return self._idempotency_tokens[token]["arn"]
 
+            # Token has expired, new request
+            del self._idempotency_tokens[token]
+            return None
         return None
 
     def _set_idempotency_token_arn(self, token, arn):
@@ -466,20 +460,19 @@ class AWSCertificateManagerBackend(BaseBackend):
         }
 
     def import_cert(self, certificate, private_key, chain=None, arn=None, tags=None):
-        if arn is not None:
-            if arn not in self._certificates:
-                raise self._arn_not_found(arn)
-            else:
-                # Will reuse provided ARN
-                bundle = CertBundle(
-                    certificate, private_key, chain=chain, region=self.region, arn=arn
-                )
-        else:
+        if arn is None:
             # Will generate a random ARN
             bundle = CertBundle(
                 certificate, private_key, chain=chain, region=self.region
             )
 
+        elif arn not in self._certificates:
+            raise self._arn_not_found(arn)
+        else:
+            # Will reuse provided ARN
+            bundle = CertBundle(
+                certificate, private_key, chain=chain, region=self.region, arn=arn
+            )
         self._certificates[bundle.arn] = bundle
 
         if tags:
@@ -559,6 +552,7 @@ class AWSCertificateManagerBackend(BaseBackend):
         return certificate, certificate_chain, private_key
 
 
-acm_backends = {}
-for region, ec2_backend in ec2_backends.items():
-    acm_backends[region] = AWSCertificateManagerBackend(region)
+acm_backends = {
+    region: AWSCertificateManagerBackend(region)
+    for region, ec2_backend in ec2_backends.items()
+}

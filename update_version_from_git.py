@@ -84,9 +84,7 @@ def prerelease_version():
     assert (
         initpy_ver > ver
     ), "the moto/__init__.py version should be newer than the last tagged release."
-    return "{}.{}.{}.dev{}".format(
-        initpy_ver.major, initpy_ver.minor, initpy_ver.micro, commits_since
-    )
+    return f"{initpy_ver.major}.{initpy_ver.minor}.{initpy_ver.micro}.dev{commits_since}"
 
 
 def read(*parts):
@@ -105,11 +103,12 @@ def get_version():
     )
     if not version_match:
         raise RuntimeError("Unable to find version string.")
-    initpy_ver = version_match.group(1)
-    assert len(initpy_ver.split(".")) in [
+    initpy_ver = version_match[1]
+    assert len(initpy_ver.split(".")) in {
         3,
         4,
-    ], "moto/__init__.py version should be like 0.0.2.dev"
+    }, "moto/__init__.py version should be like 0.0.2.dev"
+
     return Version(initpy_ver)
 
 
@@ -118,9 +117,7 @@ def increase_patch_version(old_version):
     :param old_version: 2.0.1
     :return: 2.0.2.dev
     """
-    return "{}.{}.{}.dev".format(
-        old_version.major, old_version.minor, old_version.micro + 1
-    )
+    return f"{old_version.major}.{old_version.minor}.{old_version.micro + 1}.dev"
 
 
 def release_version_correct():
@@ -151,7 +148,7 @@ if __name__ == "__main__":
     if len(sys.argv) == 1:
         release_version_correct()
     elif len(sys.argv) == 2:
-        for _, arg in enumerate(sys.argv):
+        for arg in sys.argv:
             new_version = arg
         if new_version == "patch":
             new_version = increase_patch_version(get_version())

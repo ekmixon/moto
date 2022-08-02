@@ -226,17 +226,11 @@ class ExpressionParser(metaclass=abc.ABCMeta):
 
     def get_last_token_value(self):
         """Get the last token that was correctly parsed or return empty string"""
-        if self.token_pos > 0:
-            return self.token_list[self.token_pos - 1].value
-        else:
-            return ""
+        return self.token_list[self.token_pos - 1].value if self.token_pos > 0 else ""
 
     def get_last_token_type(self):
         """Get the last token type that was correctly parsed or return None"""
-        if self.token_pos > 0:
-            return self.token_list[self.token_pos - 1].type
-        else:
-            return None
+        return self.token_list[self.token_pos - 1].type if self.token_pos > 0 else None
 
     def get_2nd_last_token_value_if_last_was_whitespace(self):
         """Get the 2nd last token that was correctly parsed if last one was whitespace or return empty string"""
@@ -261,12 +255,11 @@ class ExpressionParser(metaclass=abc.ABCMeta):
 
     def get_2nd_following_token_value_if_following_was_whitespace(self):
         """Get the 2nd following token that was correctly parsed if 1st one was whitespace or return empty string"""
-        if self.get_following_token_type() == Token.WHITESPACE:
-            try:
-                return self.token_list[self.token_pos + 2].value
-            except IndexError:
-                return ""
-        else:
+        if self.get_following_token_type() != Token.WHITESPACE:
+            return ""
+        try:
+            return self.token_list[self.token_pos + 2].value
+        except IndexError:
             return ""
 
     def skip_white_space(self):
@@ -414,24 +407,23 @@ class NestableBinExpressionParser(ExpressionParser):
         """
         if len(self.target_nodes) == 1:
             return UpdateExpressionValue(children=[self.target_nodes.popleft()])
-        else:
+        target_node = UpdateExpressionValue(
+            children=[
+                self.target_nodes.popleft(),
+                self.target_nodes.popleft(),
+                self.target_nodes.popleft(),
+            ]
+        )
+        while len(self.target_nodes) >= 2:
             target_node = UpdateExpressionValue(
                 children=[
-                    self.target_nodes.popleft(),
+                    target_node,
                     self.target_nodes.popleft(),
                     self.target_nodes.popleft(),
                 ]
             )
-            while len(self.target_nodes) >= 2:
-                target_node = UpdateExpressionValue(
-                    children=[
-                        target_node,
-                        self.target_nodes.popleft(),
-                        self.target_nodes.popleft(),
-                    ]
-                )
-            assert len(self.target_nodes) == 0
-            return target_node
+        assert len(self.target_nodes) == 0
+        return target_node
 
 
 class UpdateExpressionParser(ExpressionParser, NestableExpressionParserMixin):
@@ -793,10 +785,9 @@ class UpdateExpressionOperandParser(ExpressionParser):
 
 class UpdateExpressionAttributeValueParser(ExpressionParser):
     def _parse(self):
-        attr_value = ExpressionAttributeValue(
+        return ExpressionAttributeValue(
             self.process_token_of_type(Token.ATTRIBUTE_VALUE)
         )
-        return attr_value
 
     @classmethod
     def _is_possible_start(cls, token):

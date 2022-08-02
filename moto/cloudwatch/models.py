@@ -226,12 +226,10 @@ class MetricDatum(BaseModel):
             ):
                 return False
 
-        if dimensions and any(
-            Dimension(d["Name"], d.get("Value")) not in self.dimensions
+        return not dimensions or all(
+            Dimension(d["Name"], d.get("Value")) in self.dimensions
             for d in dimensions
-        ):
-            return False
-        return True
+        )
 
 
 class Dashboard(BaseModel):
@@ -266,39 +264,23 @@ class Statistics:
 
     @property
     def sample_count(self):
-        if "SampleCount" not in self.stats:
-            return None
-
-        return len(self.values)
+        return None if "SampleCount" not in self.stats else len(self.values)
 
     @property
     def sum(self):
-        if "Sum" not in self.stats:
-            return None
-
-        return sum(self.values)
+        return None if "Sum" not in self.stats else sum(self.values)
 
     @property
     def minimum(self):
-        if "Minimum" not in self.stats:
-            return None
-
-        return min(self.values)
+        return None if "Minimum" not in self.stats else min(self.values)
 
     @property
     def maximum(self):
-        if "Maximum" not in self.stats:
-            return None
-
-        return max(self.values)
+        return None if "Maximum" not in self.stats else max(self.values)
 
     @property
     def average(self):
-        if "Average" not in self.stats:
-            return None
-
-        # when moto is 3.4+ we can switch to the statistics module
-        return sum(self.values) / len(self.values)
+        return sum(self.values) / len(self.values) if "Average" in self.stats else None
 
 
 class CloudWatchBackend(BaseBackend):
@@ -408,10 +390,7 @@ class CloudWatchBackend(BaseBackend):
     @staticmethod
     def _list_element_starts_with(items, needle):
         """True of any of the list elements starts with needle"""
-        for item in items:
-            if item.startswith(needle):
-                return True
-        return False
+        return any(item.startswith(needle) for item in items)
 
     def get_alarms_by_action_prefix(self, action_prefix):
         return [
@@ -495,22 +474,20 @@ class CloudWatchBackend(BaseBackend):
                     if md.namespace == query_ns and md.name == query_name
                 ]
 
-                metric_values = [m.value for m in query_period_data]
-
-                if len(metric_values) > 0:
+                if metric_values := [m.value for m in query_period_data]:
                     if stat == "Average":
                         result_vals.append(sum(metric_values) / len(metric_values))
-                    elif stat == "Minimum":
-                        result_vals.append(min(metric_values))
                     elif stat == "Maximum":
                         result_vals.append(max(metric_values))
+                    elif stat == "Minimum":
+                        result_vals.append(min(metric_values))
                     elif stat == "Sum":
                         result_vals.append(sum(metric_values))
                     timestamps.append(
                         iso_8601_datetime_without_milliseconds(period_start_time)
                     )
                 period_start_time += delta
-            if scan_by == "TimestampDescending" and len(timestamps) > 0:
+            if scan_by == "TimestampDescending" and timestamps:
                 timestamps.reverse()
                 result_vals.reverse()
             label = query["metric_stat._metric._metric_name"] + " " + stat
@@ -558,7 +535,7 @@ class CloudWatchBackend(BaseBackend):
             return []
 
         idx = 0
-        data = list()
+        data = []
         for dt in daterange(
             filtered_data[0].timestamp,
             filtered_data[-1].timestamp + period_delta,
@@ -635,13 +612,12 @@ class CloudWatchBackend(BaseBackend):
         if next_token:
             if next_token not in self.paged_metric_data:
                 raise InvalidParameterValue("Request parameter NextToken is invalid")
-            else:
-                metrics = self.paged_metric_data[next_token]
-                del self.paged_metric_data[next_token]  # Cant reuse same token twice
-                return self._get_paginated(metrics)
+            metrics = self.paged_metric_data[next_token]
+            del self.paged_metric_data[next_token]  # Cant reuse same token twice
         else:
             metrics = self.get_filtered_metrics(metric_name, namespace, dimensions)
-            return self._get_paginated(metrics)
+
+        return self._get_paginated(metrics)
 
     def get_filtered_metrics(self, metric_name, namespace, dimensions):
         metrics = self.get_all_metrics()
@@ -672,17 +648,18 @@ class CloudWatchBackend(BaseBackend):
         self.tagger.untag_resource_using_names(arn, tag_keys)
 
     def _get_paginated(self, metrics):
-        if len(metrics) > 500:
-            next_token = str(uuid4())
-            self.paged_metric_data[next_token] = metrics[500:]
-            return next_token, metrics[0:500]
-        else:
+        if len(metrics) <= 500:
             return None, metrics
+        next_token = str(uuid4())
+        self.paged_metric_data[next_token] = metrics[500:]
+        return next_token, metrics[:500]
 
 
-cloudwatch_backends = {}
-for region in Session().get_available_regions("cloudwatch"):
-    cloudwatch_backends[region] = CloudWatchBackend(region)
+cloudwatch_backends = {
+    region: CloudWatchBackend(region)
+    for region in Session().get_available_regions("cloudwatch")
+}
+
 for region in Session().get_available_regions(
     "cloudwatch", partition_name="aws-us-gov"
 ):

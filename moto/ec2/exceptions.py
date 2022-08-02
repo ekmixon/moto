@@ -90,7 +90,7 @@ class InvalidSubnetIdError(EC2ClientError):
     def __init__(self, subnet_id):
         super().__init__(
             "InvalidSubnetID.NotFound",
-            "The subnet ID '{}' does not exist".format(subnet_id),
+            f"The subnet ID '{subnet_id}' does not exist",
         )
 
 
@@ -132,9 +132,7 @@ class InvalidVpnGatewayAttachmentError(EC2ClientError):
     def __init__(self, vpn_gw, vpc_id):
         super().__init__(
             "InvalidVpnGatewayAttachment.NotFound",
-            "The attachment with vpn gateway ID '{}' and vpc ID '{}' does not exist".format(
-                vpn_gw, vpc_id
-            ),
+            f"The attachment with vpn gateway ID '{vpn_gw}' and vpc ID '{vpc_id}' does not exist",
         )
 
 
@@ -544,8 +542,7 @@ class OperationNotPermitted(EC2ClientError):
     def __init__(self, association_id):
         super().__init__(
             "OperationNotPermitted",
-            "The vpc CIDR block with association ID {} may not be disassociated. "
-            "It is the primary IPv4 CIDR block of the VPC".format(association_id),
+            f"The vpc CIDR block with association ID {association_id} may not be disassociated. It is the primary IPv4 CIDR block of the VPC",
         )
 
 
@@ -564,26 +561,20 @@ class NetworkAclEntryAlreadyExistsError(EC2ClientError):
     def __init__(self, rule_number):
         super().__init__(
             "NetworkAclEntryAlreadyExists",
-            "The network acl entry identified by {} already exists.".format(
-                rule_number
-            ),
+            f"The network acl entry identified by {rule_number} already exists.",
         )
 
 
 class InvalidSubnetRangeError(EC2ClientError):
     def __init__(self, cidr_block):
-        super().__init__(
-            "InvalidSubnet.Range", "The CIDR '{}' is invalid.".format(cidr_block)
-        )
+        super().__init__("InvalidSubnet.Range", f"The CIDR '{cidr_block}' is invalid.")
 
 
 class InvalidCIDRBlockParameterError(EC2ClientError):
     def __init__(self, cidr_block):
         super().__init__(
             "InvalidParameterValue",
-            "Value ({}) for parameter cidrBlock is invalid. This is not a valid CIDR block.".format(
-                cidr_block
-            ),
+            f"Value ({cidr_block}) for parameter cidrBlock is invalid. This is not a valid CIDR block.",
         )
 
 
@@ -591,9 +582,7 @@ class InvalidDestinationCIDRBlockParameterError(EC2ClientError):
     def __init__(self, cidr_block):
         super().__init__(
             "InvalidParameterValue",
-            "Value ({}) for parameter destinationCidrBlock is invalid. This is not a valid CIDR block.".format(
-                cidr_block
-            ),
+            f"Value ({cidr_block}) for parameter destinationCidrBlock is invalid. This is not a valid CIDR block.",
         )
 
 
@@ -601,15 +590,13 @@ class InvalidSubnetConflictError(EC2ClientError):
     def __init__(self, cidr_block):
         super().__init__(
             "InvalidSubnet.Conflict",
-            "The CIDR '{}' conflicts with another subnet".format(cidr_block),
+            f"The CIDR '{cidr_block}' conflicts with another subnet",
         )
 
 
 class InvalidVPCRangeError(EC2ClientError):
     def __init__(self, cidr_block):
-        super().__init__(
-            "InvalidVpc.Range", "The CIDR '{}' is invalid.".format(cidr_block)
-        )
+        super().__init__("InvalidVpc.Range", f"The CIDR '{cidr_block}' is invalid.")
 
 
 # accept exception
@@ -691,9 +678,7 @@ class InvalidTaggableResourceType(EC2ClientError):
     def __init__(self, resource_type):
         super().__init__(
             "InvalidParameterValue",
-            "'{}' is not a valid taggable resource type for this operation.".format(
-                resource_type
-            ),
+            f"'{resource_type}' is not a valid taggable resource type for this operation.",
         )
 
 

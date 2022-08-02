@@ -68,15 +68,12 @@ class DomainDispatcherApplication(object):
             return host
 
         for backend, pattern in self.backend_url_patterns:
-            if pattern.match("http://%s" % host):
+            if pattern.match(f"http://{host}"):
                 return backend
 
         if "amazonaws.com" in host:
             print(
-                "Unable to find appropriate backend for {}."
-                "Remember to add the URL to urls.py, and run script/update_backend_index.py to index it.".format(
-                    host
-                )
+                f"Unable to find appropriate backend for {host}.Remember to add the URL to urls.py, and run script/update_backend_index.py to index it."
             )
 
     def infer_service_region_host(self, environ):
@@ -218,8 +215,7 @@ class AWSTestHelper(FlaskClient):
         """
         Method calls resource with action_name and returns data of response.
         """
-        opts = {"Action": action_name}
-        opts.update(kwargs)
+        opts = {"Action": action_name} | kwargs
         res = self.get(
             "/?{0}".format(urlencode(opts)),
             headers={

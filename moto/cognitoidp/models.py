@@ -183,7 +183,7 @@ class CognitoIdpUserPoolAttribute(BaseModel):
             self._init_standard(schema)
 
     def _init_custom(self, schema):
-        self.name = "custom:" + self.name
+        self.name = f"custom:{self.name}"
         attribute_data_type = schema.get("AttributeDataType", None)
         if not attribute_data_type:
             raise InvalidParameterException(
@@ -192,7 +192,7 @@ class CognitoIdpUserPoolAttribute(BaseModel):
         self.data_type = attribute_data_type
         self.developer_only = schema.get("DeveloperOnlyAttribute", False)
         if self.developer_only:
-            self.name = "dev:" + self.name
+            self.name = f"dev:{self.name}"
         self.mutable = schema.get("Mutable", True)
         if schema.get("Required", False):
             raise InvalidParameterException(
@@ -231,10 +231,11 @@ class CognitoIdpUserPoolAttribute(BaseModel):
         elif self.data_type == "String":
             constraints_key = "StringAttributeConstraints"
         default_constraints = (
-            None
-            if not constraints_key
-            else CognitoIdpUserPoolAttribute.STANDARD_SCHEMA[self.name][constraints_key]
+            CognitoIdpUserPoolAttribute.STANDARD_SCHEMA[self.name][constraints_key]
+            if constraints_key
+            else None
         )
+
         self._init_constraints(schema, default_constraints)
 
     def _init_constraints(self, schema, default_constraints):
@@ -316,10 +317,9 @@ class CognitoIdpUserPoolAttribute(BaseModel):
 class CognitoIdpUserPool(BaseModel):
     def __init__(self, region, name, extended_config):
         self.region = region
-        self.id = "{}_{}".format(self.region, str(uuid.uuid4().hex))
-        self.arn = "arn:aws:cognito-idp:{}:{}:userpool/{}".format(
-            self.region, DEFAULT_ACCOUNT_ID, self.id
-        )
+        self.id = f"{self.region}_{str(uuid.uuid4().hex)}"
+        self.arn = f"arn:aws:cognito-idp:{self.region}:{DEFAULT_ACCOUNT_ID}:userpool/{self.id}"
+
         self.name = name
         self.status = None
         self.extended_config = extended_config or {}
@@ -425,17 +425,18 @@ class CognitoIdpUserPool(BaseModel):
     ):
         now = int(time.time())
         payload = {
-            "iss": "https://cognito-idp.{}.amazonaws.com/{}".format(
-                self.region, self.id
-            ),
+            "iss": f"https://cognito-idp.{self.region}.amazonaws.com/{self.id}",
             "sub": self._get_user(username).id,
             "aud": client_id,
             "token_use": token_use,
             "auth_time": now,
             "exp": now + expires_in,
-            "email": flatten_attrs(self._get_user(username).attributes).get("email"),
+            "email": flatten_attrs(self._get_user(username).attributes).get(
+                "email"
+            ),
         }
-        payload.update(extra_data)
+
+        payload |= extra_data
         headers = {"kid": "dummy"}  # KID as present in jwks-public.json
 
         return (
@@ -447,9 +448,9 @@ class CognitoIdpUserPool(BaseModel):
         attributes = []
         for attribute_schema in custom_attributes:
             base_name = attribute_schema["Name"]
-            target_name = "custom:" + base_name
+            target_name = f"custom:{base_name}"
             if attribute_schema.get("DeveloperOnlyAttribute", False):
-                target_name = "dev:" + target_name
+                target_name = f"dev:{target_name}"
             if target_name in self.schema_attributes:
                 raise InvalidParameterException(
                     f"custom:{base_name}: Existing attribute already has name {target_name}."
@@ -488,17 +489,15 @@ class CognitoIdpUserPool(BaseModel):
 
     def get_user_extra_data_by_client_id(self, client_id, username):
         extra_data = {}
-        current_client = self.clients.get(client_id, None)
-        if current_client:
+        if current_client := self.clients.get(client_id, None):
             for readable_field in current_client.get_readable_fields():
-                attribute = list(
+                if attribute := list(
                     filter(
                         lambda f: f["Name"] == readable_field,
                         self._get_user(username).attributes,
                     )
-                )
-                if len(attribute) > 0:
-                    extra_data.update({attribute[0]["Name"]: attribute[0]["Value"]})
+                ):
+                    extra_data[attribute[0]["Name"]] = attribute[0]["Value"]
         return extra_data
 
 
@@ -617,7 +616,7 @@ class CognitoIdpUser(BaseModel):
         self.user_pool_id = user_pool_id
         # Username is None when users sign up with an email or phone_number,
         # and should be given the value of the internal id generate (sub)
-        self.username = username if username else self.id
+        self.username = username or self.id
         self.password = password
         self.status = status
         self.enabled = True
@@ -716,7 +715,7 @@ class CognitoResourceServer(BaseModel):
         }
 
         if len(self.scopes) != 0:
-            res.update({"Scopes": self.scopes})
+            res["Scopes"] = self.scopes
 
         return res
 
@@ -764,11 +763,10 @@ class CognitoIdpBackend(BaseBackend):
         return list(self.user_pools.values())
 
     def describe_user_pool(self, user_pool_id):
-        user_pool = self.user_pools.get(user_pool_id)
-        if not user_pool:
+        if user_pool := self.user_pools.get(user_pool_id):
+            return user_pool
+        else:
             raise ResourceNotFoundError(f"User pool {user_pool_id} does not exist.")
-
-        return user_pool
 
     def update_user_pool(self, user_pool_id, extended_config):
         user_pool = self.describe_user_pool(user_pool_id)
@@ -828,11 +826,10 @@ class CognitoIdpBackend(BaseBackend):
     def describe_user_pool_client(self, user_pool_id, client_id):
         user_pool = self.describe_user_pool(user_pool_id)
 
-        client = user_pool.clients.get(client_id)
-        if not client:
+        if client := user_pool.clients.get(client_id):
+            return client
+        else:
             raise ResourceNotFoundError(client_id)
-
-        return client
 
     def update_user_pool_client(self, user_pool_id, client_id, extended_config):
         user_pool = self.describe_user_pool(user_pool_id)
@@ -869,11 +866,10 @@ class CognitoIdpBackend(BaseBackend):
     def describe_identity_provider(self, user_pool_id, name):
         user_pool = self.describe_user_pool(user_pool_id)
 
-        identity_provider = user_pool.identity_providers.get(name)
-        if not identity_provider:
+        if identity_provider := user_pool.identity_providers.get(name):
+            return identity_provider
+        else:
             raise ResourceNotFoundError(name)
-
-        return identity_provider
 
     def update_identity_provider(self, user_pool_id, name, extended_config):
         user_pool = self.describe_user_pool(user_pool_id)
@@ -1044,10 +1040,10 @@ class CognitoIdpBackend(BaseBackend):
     def admin_get_user(self, user_pool_id, username):
         user_pool = self.describe_user_pool(user_pool_id)
 
-        user = user_pool._get_user(username)
-        if not user:
+        if user := user_pool._get_user(username):
+            return user
+        else:
             raise UserNotFoundError("User does not exist.")
-        return user
 
     def get_user(self, access_token):
         for user_pool in self.user_pools.values():
@@ -1273,12 +1269,15 @@ class CognitoIdpBackend(BaseBackend):
             user.confirmation_code = confirmation_code
 
         code_delivery_details = {
-            "Destination": username + "@h***.com"
-            if not user
-            else user.attribute_lookup.get("email", username + "@h***.com"),
+            "Destination": user.attribute_lookup.get(
+                "email", f"{username}@h***.com"
+            )
+            if user
+            else f"{username}@h***.com",
             "DeliveryMedium": "EMAIL",
             "AttributeName": "email",
         }
+
         selected_recovery = min(
             recovery_settings["RecoveryMechanisms"],
             key=lambda recovery_mechanism: recovery_mechanism["Priority"],
@@ -1287,12 +1286,15 @@ class CognitoIdpBackend(BaseBackend):
             raise NotAuthorizedError("Contact administrator to reset password.")
         if selected_recovery["Name"] == "verified_phone_number":
             code_delivery_details = {
-                "Destination": "+*******9934"
-                if not user
-                else user.attribute_lookup.get("phone_number", "+*******9934"),
+                "Destination": user.attribute_lookup.get(
+                    "phone_number", "+*******9934"
+                )
+                if user
+                else "+*******9934",
                 "DeliveryMedium": "SMS",
                 "AttributeName": "phone_number",
             }
+
         return confirmation_code, {"CodeDeliveryDetails": code_delivery_details}
 
     def change_password(self, access_token, previous_password, proposed_password):
@@ -1337,8 +1339,9 @@ class CognitoIdpBackend(BaseBackend):
 
         if identifier in user_pool.resource_servers:
             raise InvalidParameterException(
-                "%s already exists in user pool %s." % (identifier, user_pool_id)
+                f"{identifier} already exists in user pool {user_pool_id}."
             )
+
 
         resource_server = CognitoResourceServer(user_pool_id, identifier, name, scopes)
         user_pool.resource_servers[identifier] = resource_server
@@ -1534,8 +1537,7 @@ class CognitoIdpBackend(BaseBackend):
                 self.admin_get_user(user_pool.id, username)
 
                 return {"SecretCode": str(uuid.uuid4())}
-        else:
-            raise NotAuthorizedError(access_token)
+        raise NotAuthorizedError(access_token)
 
     def verify_software_token(self, access_token, user_code):
         for user_pool in self.user_pools.values():
@@ -1546,8 +1548,7 @@ class CognitoIdpBackend(BaseBackend):
                 user.token_verified = True
 
                 return {"Status": "SUCCESS"}
-        else:
-            raise NotAuthorizedError(access_token)
+        raise NotAuthorizedError(access_token)
 
     def set_user_mfa_preference(
         self, access_token, software_token_mfa_settings, sms_mfa_settings
@@ -1569,8 +1570,7 @@ class CognitoIdpBackend(BaseBackend):
                     user.sms_mfa_enabled = True
 
                 return None
-        else:
-            raise NotAuthorizedError(access_token)
+        raise NotAuthorizedError(access_token)
 
     def admin_set_user_password(self, user_pool_id, username, password, permanent):
         user = self.admin_get_user(user_pool_id, username)
@@ -1585,9 +1585,11 @@ class CognitoIdpBackend(BaseBackend):
         user_pool.add_custom_attributes(custom_attributes)
 
 
-cognitoidp_backends = {}
-for region in Session().get_available_regions("cognito-idp"):
-    cognitoidp_backends[region] = CognitoIdpBackend(region)
+cognitoidp_backends = {
+    region: CognitoIdpBackend(region)
+    for region in Session().get_available_regions("cognito-idp")
+}
+
 for region in Session().get_available_regions(
     "cognito-idp", partition_name="aws-us-gov"
 ):

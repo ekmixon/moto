@@ -6,8 +6,11 @@ import sys
 decorators = [
     d
     for d in dir(moto)
-    if d.startswith("mock_") and not d.endswith("_deprecated") and not d == "mock_all"
+    if d.startswith("mock_")
+    and not d.endswith("_deprecated")
+    and d != "mock_all"
 ]
+
 decorator_functions = [getattr(moto, f) for f in decorators]
 BACKENDS = {f.boto3_name: (f.name, f.backend) for f in decorator_functions}
 BACKENDS["moto_api"] = ("core", "moto_api_backends")
@@ -16,7 +19,7 @@ BACKENDS["s3bucket_path"] = ("s3", "s3_backends")
 
 
 def _import_backend(module_name, backends_name):
-    module = importlib.import_module("moto." + module_name)
+    module = importlib.import_module(f"moto.{module_name}")
     return getattr(module, backends_name)
 
 

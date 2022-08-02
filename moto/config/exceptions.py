@@ -54,7 +54,7 @@ class InvalidResourceTypeException(JsonRESTError):
             )
         )
         # For PY2:
-        message = str(message)
+        message = message
 
         super().__init__("ValidationException", message)
 
@@ -222,10 +222,7 @@ class TagKeyTooBig(JsonRESTError):
     def __init__(self, tag, param="tags.X.member.key"):
         super().__init__(
             "ValidationException",
-            "1 validation error detected: Value '{}' at '{}' failed to satisfy "
-            "constraint: Member must have length less than or equal to 128".format(
-                tag, param
-            ),
+            f"1 validation error detected: Value '{tag}' at '{param}' failed to satisfy constraint: Member must have length less than or equal to 128",
         )
 
 
@@ -235,10 +232,7 @@ class TagValueTooBig(JsonRESTError):
     def __init__(self, tag, param="tags.X.member.value"):
         super().__init__(
             "ValidationException",
-            "1 validation error detected: Value '{}' at '{}' failed to satisfy "
-            "constraint: Member must have length less than or equal to 256".format(
-                tag, param
-            ),
+            f"1 validation error detected: Value '{tag}' at '{param}' failed to satisfy constraint: Member must have length less than or equal to 256",
         )
 
 
@@ -253,9 +247,8 @@ class InvalidTagCharacters(JsonRESTError):
     code = 400
 
     def __init__(self, tag, param="tags.X.member.key"):
-        message = "1 validation error detected: Value '{}' at '{}' failed to satisfy ".format(
-            tag, param
-        )
+        message = f"1 validation error detected: Value '{tag}' at '{param}' failed to satisfy "
+
         message += "constraint: Member must satisfy regular expression pattern: [\\\\p{L}\\\\p{Z}\\\\p{N}_.:/=+\\\\-@]+"
 
         super().__init__("ValidationException", message)
@@ -267,10 +260,7 @@ class TooManyTags(JsonRESTError):
     def __init__(self, tags, param="tags"):
         super().__init__(
             "ValidationException",
-            "1 validation error detected: Value '{}' at '{}' failed to satisfy "
-            "constraint: Member must have length less than or equal to 50.".format(
-                tags, param
-            ),
+            f"1 validation error detected: Value '{tags}' at '{param}' failed to satisfy constraint: Member must have length less than or equal to 50.",
         )
 
 

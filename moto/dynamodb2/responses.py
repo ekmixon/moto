@@ -77,7 +77,7 @@ def put_has_empty_keys(field_updates, table):
             for (key, val) in field_updates.items()
             if next(iter(val.keys())) in ["S", "B"] and next(iter(val.values())) == ""
         ]
-        return any([keyname in empty_str_fields for keyname in key_names])
+        return any(keyname in empty_str_fields for keyname in key_names)
     return False
 
 
@@ -106,9 +106,7 @@ class DynamoHandler(BaseResponse):
 
         ie: X-Amz-Target: DynamoDB_20111205.ListTables -> ListTables
         """
-        # Headers are case-insensitive. Probably a better way to do this.
-        match = headers.get("x-amz-target") or headers.get("X-Amz-Target")
-        if match:
+        if match := headers.get("x-amz-target") or headers.get("X-Amz-Target"):
             return match.split(".")[1]
 
     def error(self, type_, message, status=400):
@@ -130,19 +128,16 @@ class DynamoHandler(BaseResponse):
     @amzn_request_id
     def call_action(self):
         self.body = json.loads(self.body or "{}")
-        endpoint = self.get_endpoint_name(self.headers)
-        if endpoint:
-            endpoint = camelcase_to_underscores(endpoint)
-            response = getattr(self, endpoint)()
-            if isinstance(response, str):
-                return 200, self.response_headers, response
-
-            else:
-                status_code, new_headers, response_content = response
-                self.response_headers.update(new_headers)
-                return status_code, self.response_headers, response_content
-        else:
+        if not (endpoint := self.get_endpoint_name(self.headers)):
             return 404, self.response_headers, ""
+        endpoint = camelcase_to_underscores(endpoint)
+        response = getattr(self, endpoint)()
+        if isinstance(response, str):
+            return 200, self.response_headers, response
+
+        status_code, new_headers, response_content = response
+        self.response_headers.update(new_headers)
+        return status_code, self.response_headers, response_content
 
     def list_tables(self):
         body = self.body
@@ -182,22 +177,22 @@ class DynamoHandler(BaseResponse):
         global_indexes = body.get("GlobalSecondaryIndexes", [])
         local_secondary_indexes = body.get("LocalSecondaryIndexes", [])
         # Verify AttributeDefinitions list all
-        expected_attrs = []
-        expected_attrs.extend([key["AttributeName"] for key in key_schema])
+        expected_attrs = [key["AttributeName"] for key in key_schema]
         expected_attrs.extend(
             schema["AttributeName"]
             for schema in itertools.chain(
-                *list(idx["KeySchema"] for idx in local_secondary_indexes)
+                *[idx["KeySchema"] for idx in local_secondary_indexes]
             )
         )
+
         expected_attrs.extend(
             schema["AttributeName"]
             for schema in itertools.chain(
-                *list(idx["KeySchema"] for idx in global_indexes)
+                *[idx["KeySchema"] for idx in global_indexes]
             )
         )
-        expected_attrs = list(set(expected_attrs))
-        expected_attrs.sort()
+
+        expected_attrs = sorted(set(expected_attrs))
         actual_attrs = [item["AttributeName"] for item in attr]
         actual_attrs.sort()
         if actual_attrs != expected_attrs:
@@ -218,9 +213,8 @@ class DynamoHandler(BaseResponse):
         )
         if table is not None:
             return dynamo_json_dump(table.describe())
-        else:
-            er = "com.amazonaws.dynamodb.v20111205#ResourceInUseException"
-            return self.error(er, "Resource in use")
+        er = "com.amazonaws.dynamodb.v20111205#ResourceInUseException"
+        return self.error(er, "Resource in use")
 
     def _throw_attr_error(self, actual_attrs, expected_attrs, indexes):
         def dump_list(list_):
@@ -283,9 +277,8 @@ class DynamoHandler(BaseResponse):
         table = self.dynamodb_backend.delete_table(name)
         if table is not None:
             return dynamo_json_dump(table.describe())
-        else:
-            er = "com.amazonaws.dynamodb.v20111205#ResourceNotFoundException"
-            return self.error(er, "Requested resource not found")
+        er = "com.amazonaws.dynamodb.v20111205#ResourceNotFoundException"
+        return self.error(er, "Requested resource not found")
 
     def describe_endpoints(self):
         response = {"Endpoints": self.dynamodb_backend.describe_endpoints()}
@@ -308,8 +301,7 @@ class DynamoHandler(BaseResponse):
             table_arn = self.body["ResourceArn"]
             all_tags = self.dynamodb_backend.list_tags_of_resource(table_arn)
             all_tag_keys = [tag["Key"] for tag in all_tags]
-            marker = self.body.get("NextToken")
-            if marker:
+            if marker := self.body.get("NextToken"):
                 start = all_tag_keys.index(marker) + 1
             else:
                 start = 0
@@ -365,14 +357,9 @@ class DynamoHandler(BaseResponse):
             return get_empty_str_error()
 
         overwrite = "Expected" not in self.body
-        if not overwrite:
-            expected = self.body["Expected"]
-        else:
-            expected = None
-
+        expected = None if overwrite else self.body["Expected"]
         if return_values == "ALL_OLD":
-            existing_item = self.dynamodb_backend.get_item(name, item)
-            if existing_item:
+            if existing_item := self.dynamodb_backend.get_item(name, item):
                 existing_attributes = existing_item.to_json()["Attributes"]
             else:
                 existing_attributes = {}
@@ -464,14 +451,13 @@ class DynamoHandler(BaseResponse):
         projection_expression = self.body.get("ProjectionExpression")
         expression_attribute_names = self.body.get("ExpressionAttributeNames")
         if expression_attribute_names == {}:
+            er = "ValidationException"
             if projection_expression is None:
-                er = "ValidationException"
                 return self.error(
                     er,
                     "ExpressionAttributeNames can only be specified when using expressions",
                 )
             else:
-                er = "ValidationException"
                 return self.error(er, "ExpressionAttributeNames must not be empty")
 
         expression_attribute_names = expression_attribute_names or {}
@@ -508,8 +494,9 @@ class DynamoHandler(BaseResponse):
                 )
         # Scenario 2: We're requesting more than a 100 keys across all tables
         nr_of_keys_across_all_tables = sum(
-            [len(req["Keys"]) for _, req in table_batches.items()]
+            len(req["Keys"]) for _, req in table_batches.items()
         )
+
         if nr_of_keys_across_all_tables > 100:
             return self.error(
                 "com.amazonaws.dynamodb.v20111205#ValidationException",
@@ -590,23 +577,24 @@ class DynamoHandler(BaseResponse):
             index_name = self.body.get("IndexName")
             if index_name:
                 all_indexes = (table.global_indexes or []) + (table.indexes or [])
-                indexes_by_name = dict((i.name, i) for i in all_indexes)
+                indexes_by_name = {i.name: i for i in all_indexes}
                 if index_name not in indexes_by_name:
                     er = "com.amazonaws.dynamodb.v20120810#ResourceNotFoundException"
                     return self.error(
                         er,
-                        "Invalid index: {} for table: {}. Available indexes are: {}".format(
-                            index_name, name, ", ".join(indexes_by_name.keys())
-                        ),
+                        f'Invalid index: {index_name} for table: {name}. Available indexes are: {", ".join(indexes_by_name.keys())}',
                     )
+
 
                 index = indexes_by_name[index_name].schema
             else:
                 index = table.schema
 
-            reverse_attribute_lookup = dict(
-                (v, k) for k, v in self.body.get("ExpressionAttributeNames", {}).items()
-            )
+            reverse_attribute_lookup = {
+                v: k
+                for k, v in self.body.get("ExpressionAttributeNames", {}).items()
+            }
+
 
             if " and " in key_condition_expression.lower():
                 expressions = re.split(
@@ -629,10 +617,9 @@ class DynamoHandler(BaseResponse):
                 if hash_key_expression is None:
                     return self.error(
                         "ValidationException",
-                        "Query condition missed key schema element: {}".format(
-                            hash_key_var
-                        ),
+                        f"Query condition missed key schema element: {hash_key_var}",
                     )
+
                 hash_key_expression = hash_key_expression.strip("()")
                 expressions.pop(i)
 
@@ -671,10 +658,9 @@ class DynamoHandler(BaseResponse):
                     ]
                     return self.error(
                         "com.amazonaws.dynamodb.v20111205#ValidationException",
-                        "Invalid KeyConditionExpression: Invalid function name; function: {}".format(
-                            function_used
-                        ),
+                        f"Invalid KeyConditionExpression: Invalid function name; function: {function_used}",
                     )
+
                 else:
                     # [range_key, =, x]
                     range_values = [value_alias_map[range_key_expression_components[2]]]
@@ -689,10 +675,9 @@ class DynamoHandler(BaseResponse):
                 if supplied_range_key not in range_keys:
                     return self.error(
                         "ValidationException",
-                        "Query condition missed key schema element: {}".format(
-                            range_keys[0]
-                        ),
+                        f"Query condition missed key schema element: {range_keys[0]}",
                     )
+
             else:
                 hash_key_expression = key_condition_expression.strip("()")
                 range_comparison = None
@@ -733,23 +718,26 @@ class DynamoHandler(BaseResponse):
                     er = "'com.amazonaws.dynamodb.v20120810#ResourceNotFoundException"
                     return self.error(er, "Requested resource not found")
                 hash_key = key_conditions[hash_key_name]["AttributeValueList"][0]
-                if len(key_conditions) == 1:
+                if (
+                    len(key_conditions) != 1
+                    and (range_key_name is not None or filter_kwargs)
+                    and (range_condition := key_conditions.get(range_key_name))
+                ):
+                    range_comparison = range_condition["ComparisonOperator"]
+                    range_values = range_condition["AttributeValueList"]
+                elif (
+                    len(key_conditions) != 1
+                    and (range_key_name is not None or filter_kwargs)
+                    and not (range_condition := key_conditions.get(range_key_name))
+                    or len(key_conditions) == 1
+                ):
                     range_comparison = None
                     range_values = []
                 else:
-                    if range_key_name is None and not filter_kwargs:
-                        er = "com.amazon.coral.validate#ValidationException"
-                        return self.error(er, "Validation Exception")
-                    else:
-                        range_condition = key_conditions.get(range_key_name)
-                        if range_condition:
-                            range_comparison = range_condition["ComparisonOperator"]
-                            range_values = range_condition["AttributeValueList"]
-                        else:
-                            range_comparison = None
-                            range_values = []
+                    er = "com.amazon.coral.validate#ValidationException"
+                    return self.error(er, "Validation Exception")
             if query_filters:
-                filter_kwargs.update(query_filters)
+                filter_kwargs |= query_filters
         index_name = self.body.get("IndexName")
         exclusive_start_key = self.body.get("ExclusiveStartKey")
         limit = self.body.get("Limit")

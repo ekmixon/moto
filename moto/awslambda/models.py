@@ -82,8 +82,7 @@ def zip2tar(zip_bytes):
                 tarf.addfile(tarinfo, infile)
 
         with open(tarname, "rb") as f:
-            tar_data = f.read()
-            return tar_data
+            return f.read()
 
 
 class _VolumeRefCount:
@@ -151,10 +150,7 @@ class _DockerDataVolumeContext:
                 try:
                     self._vol_ref.volume.remove()
                 except docker.errors.APIError as e:
-                    if e.status_code != 409:
-                        raise
-
-                    raise  # multiple processes trying to use same volume?
+                    raise
 
 
 def _zipfile_content(zipfile):
@@ -232,12 +228,10 @@ class LayerVersion(CloudFormationModel):
             self.code_bytes, self.code_size, self.code_sha_256 = _zipfile_content(
                 self.content["ZipFile"]
             )
-        else:
-            key = _validate_s3_bucket_and_key(self.content)
-            if key:
-                self.code_bytes = key.value
-                self.code_size = key.size
-                self.code_sha_256 = hashlib.sha256(key.value).hexdigest()
+        elif key := _validate_s3_bucket_and_key(self.content):
+            self.code_bytes = key.value
+            self.code_size = key.size
+            self.code_sha_256 = hashlib.sha256(key.value).hexdigest()
 
     @property
     def arn(self):
@@ -289,8 +283,7 @@ class LayerVersion(CloudFormationModel):
                 spec[prop] = properties[prop]
 
         backend = lambda_backends[region_name]
-        layer_version = backend.publish_layer_version(spec)
-        return layer_version
+        return backend.publish_layer_version(spec)
 
 
 class Layer(object):
@@ -340,7 +333,7 @@ class LambdaFunction(CloudFormationModel, DockerModel):
         self.timeout = spec.get("Timeout", 3)
         self.layers = self._get_layers_data(spec.get("Layers", []))
 
-        self.logs_group_name = "/aws/lambda/{}".format(self.function_name)
+        self.logs_group_name = f"/aws/lambda/{self.function_name}"
 
         # this isn't finished yet. it needs to find out the VpcId value
         self._vpc_config = spec.get(
@@ -358,23 +351,21 @@ class LambdaFunction(CloudFormationModel, DockerModel):
 
             # TODO: we should be putting this in a lambda bucket
             self.code["UUID"] = str(uuid.uuid4())
-            self.code["S3Key"] = "{}-{}".format(self.function_name, self.code["UUID"])
+            self.code["S3Key"] = f'{self.function_name}-{self.code["UUID"]}'
+        elif key := _validate_s3_bucket_and_key(self.code):
+            self.code_bytes = key.value
+            self.code_size = key.size
+            self.code_sha_256 = hashlib.sha256(key.value).hexdigest()
         else:
-            key = _validate_s3_bucket_and_key(self.code)
-            if key:
-                self.code_bytes = key.value
-                self.code_size = key.size
-                self.code_sha_256 = hashlib.sha256(key.value).hexdigest()
-            else:
-                self.code_bytes = ""
-                self.code_size = 0
-                self.code_sha_256 = ""
+            self.code_bytes = ""
+            self.code_size = 0
+            self.code_sha_256 = ""
 
         self.function_arn = make_function_arn(
             self.region, ACCOUNT_ID, self.function_name
         )
 
-        self.tags = dict()
+        self.tags = {}
 
     def set_version(self, version):
         self.function_arn = make_function_ver_arn(
@@ -446,13 +437,10 @@ class LambdaFunction(CloudFormationModel, DockerModel):
             "Configuration": self.get_configuration(),
         }
         if self.reserved_concurrency:
-            code.update(
-                {
-                    "Concurrency": {
-                        "ReservedConcurrentExecutions": self.reserved_concurrency
-                    }
-                }
-            )
+            code["Concurrency"] = {
+                "ReservedConcurrentExecutions": self.reserved_concurrency
+            }
+
         return code
 
     def update_configuration(self, config_updates):
@@ -501,7 +489,7 @@ class LambdaFunction(CloudFormationModel, DockerModel):
 
             # TODO: we should be putting this in a lambda bucket
             self.code["UUID"] = str(uuid.uuid4())
-            self.code["S3Key"] = "{}-{}".format(self.function_name, self.code["UUID"])
+            self.code["S3Key"] = f'{self.function_name}-{self.code["UUID"]}'
         elif "S3Bucket" in updated_spec and "S3Key" in updated_spec:
             key = None
             try:
@@ -542,7 +530,7 @@ class LambdaFunction(CloudFormationModel, DockerModel):
         self.logs_backend.ensure_log_group(self.logs_group_name, [])
         # TODO: context not yet implemented
         if event is None:
-            event = dict()
+            event = {}
         if context is None:
             context = {}
         output = None
@@ -553,7 +541,7 @@ class LambdaFunction(CloudFormationModel, DockerModel):
             #  Should get invoke_id /RequestId from invocation
             env_vars = {
                 "_HANDLER": self.handler,
-                "AWS_EXECUTION_ENV": "AWS_Lambda_{}".format(self.run_time),
+                "AWS_EXECUTION_ENV": f"AWS_Lambda_{self.run_time}",
                 "AWS_LAMBDA_FUNCTION_TIMEOUT": self.timeout,
                 "AWS_LAMBDA_FUNCTION_NAME": self.function_name,
                 "AWS_LAMBDA_FUNCTION_MEMORY_SIZE": self.memory_size,
@@ -564,7 +552,8 @@ class LambdaFunction(CloudFormationModel, DockerModel):
                 "AWS_SESSION_TOKEN": "session-token",
             }
 
-            env_vars.update(self.environment_vars)
+
+            env_vars |= self.environment_vars
 
             container = exit_code = None
             log_config = docker.types.LogConfig(type=docker.types.LogConfig.types.JSON)
@@ -578,24 +567,25 @@ class LambdaFunction(CloudFormationModel, DockerModel):
                     )
                     # add host.docker.internal host on linux to emulate Mac + Windows behavior
                     #   for communication with other mock AWS services running on localhost
-                    if platform == "linux" or platform == "linux2":
+                    if platform in ["linux", "linux2"]:
                         run_kwargs["extra_hosts"] = {
                             "host.docker.internal": "host-gateway"
                         }
 
-                    image_ref = "lambci/lambda:{}".format(self.run_time)
+                    image_ref = f"lambci/lambda:{self.run_time}"
                     self.docker_client.images.pull(":".join(parse_image_ref(image_ref)))
                     container = self.docker_client.containers.run(
                         image_ref,
                         [self.handler, json.dumps(event)],
                         remove=False,
-                        mem_limit="{}m".format(self.memory_size),
-                        volumes=["{}:/var/task".format(data_vol.name)],
+                        mem_limit=f"{self.memory_size}m",
+                        volumes=[f"{data_vol.name}:/var/task"],
                         environment=env_vars,
                         detach=True,
                         log_config=log_config,
-                        **run_kwargs
+                        **run_kwargs,
                     )
+
                 finally:
                     if container:
                         try:
@@ -619,14 +609,12 @@ class LambdaFunction(CloudFormationModel, DockerModel):
             # We only care about the response from the lambda
             # Which is the last line of the output, according to https://github.com/lambci/docker-lambda/issues/25
             resp = output.splitlines()[-1]
-            logs = os.linesep.join(
-                [line for line in self.convert(output).splitlines()[:-1]]
-            )
+            logs = os.linesep.join(list(self.convert(output).splitlines()[:-1]))
             invocation_error = exit_code != 0
             return resp, invocation_error, logs
         except docker.errors.DockerException as e:
             # Docker itself is probably not running - there will be no Lambda-logs to handle
-            msg = "error running docker: {}".format(e)
+            msg = f"error running docker: {e}"
             self.save_logs(msg)
             return msg, True, ""
 
@@ -647,11 +635,7 @@ class LambdaFunction(CloudFormationModel, DockerModel):
 
     def invoke(self, body, request_headers, response_headers):
 
-        if body:
-            body = json.loads(body)
-        else:
-            body = "{}"
-
+        body = json.loads(body) if body else "{}"
         # Get the invocation type:
         res, errored, logs = self._invoke_lambda(code=self.code, event=body)
         inv_type = request_headers.get("x-amz-invocation-type", "RequestResponse")
@@ -714,8 +698,7 @@ class LambdaFunction(CloudFormationModel, DockerModel):
             )
 
         backend = lambda_backends[region_name]
-        fn = backend.create_function(spec)
-        return fn
+        return backend.create_function(spec)
 
     @classmethod
     def has_cfn_attr(cls, attribute):
@@ -777,7 +760,7 @@ class EventSourceMapping(CloudFormationModel):
     def _validate_event_source(self, event_source_arn):
         valid_services = ("dynamodb", "kinesis", "sqs")
         service = self._get_service_source_from_arn(event_source_arn)
-        return True if service in valid_services else False
+        return service in valid_services
 
     @property
     def event_source_arn(self):
@@ -809,9 +792,8 @@ class EventSourceMapping(CloudFormationModel):
         if batch_size is None:
             self._batch_size = batch_size_for_source[0]
         elif batch_size > batch_size_for_source[1]:
-            error_message = "BatchSize {} exceeds the max of {}".format(
-                batch_size, batch_size_for_source[1]
-            )
+            error_message = f"BatchSize {batch_size} exceeds the max of {batch_size_for_source[1]}"
+
             raise ValueError("InvalidParameterValueException", error_message)
         else:
             self._batch_size = int(batch_size)
@@ -956,19 +938,17 @@ class LambdaStorage(object):
         :param fn: Function
         :type fn: LambdaFunction
         """
-        valid_role = re.match(InvalidRoleFormat.pattern, fn.role)
-        if valid_role:
-            account = valid_role.group(2)
-            if account != ACCOUNT_ID:
-                raise CrossAccountNotAllowed()
-            try:
-                iam_backend.get_role_by_arn(fn.role)
-            except IAMNotFoundException:
-                raise InvalidParameterValueException(
-                    "The role defined for the function cannot be assumed by Lambda."
-                )
-        else:
+        if not (valid_role := re.match(InvalidRoleFormat.pattern, fn.role)):
             raise InvalidRoleFormat(fn.role)
+        account = valid_role[2]
+        if account != ACCOUNT_ID:
+            raise CrossAccountNotAllowed()
+        try:
+            iam_backend.get_role_by_arn(fn.role)
+        except IAMNotFoundException:
+            raise InvalidParameterValueException(
+                "The role defined for the function cannot be assumed by Lambda."
+            )
         if fn.function_name in self._functions:
             self._functions[fn.function_name]["latest"] = fn
         else:
@@ -1000,8 +980,7 @@ class LambdaStorage(object):
         return fn
 
     def del_function(self, name_or_arn, qualifier=None):
-        function = self.get_function_by_name_or_arn(name_or_arn)
-        if function:
+        if function := self.get_function_by_name_or_arn(name_or_arn):
             name = function.function_name
             if not qualifier:
                 # Something is still reffing this so delete all arns
@@ -1028,8 +1007,7 @@ class LambdaStorage(object):
                 return True
 
             else:
-                fn = self.get_function_by_name(name, qualifier)
-                if fn:
+                if fn := self.get_function_by_name(name, qualifier):
                     self._functions[name]["versions"].remove(fn)
 
                     # If theres no functions left
@@ -1048,7 +1026,7 @@ class LambdaStorage(object):
 
         for function_group in self._functions.values():
             latest = copy.deepcopy(function_group["latest"])
-            latest.function_arn = "{}:$LATEST".format(latest.function_arn)
+            latest.function_arn = f"{latest.function_arn}:$LATEST"
             result.append(latest)
 
             result.extend(function_group["versions"])
@@ -1060,12 +1038,11 @@ class LambdaStorage(object):
         Return the list of functions with version @LATEST
         :return:
         """
-        result = []
-        for function_group in self._functions.values():
-            if function_group["latest"] is not None:
-                result.append(function_group["latest"])
-
-        return result
+        return [
+            function_group["latest"]
+            for function_group in self._functions.values()
+            if function_group["latest"] is not None
+        ]
 
 
 class LayerStorage(object):
@@ -1140,9 +1117,7 @@ class LambdaBackend(BaseBackend):
         required = ["EventSourceArn", "FunctionName"]
         for param in required:
             if not spec.get(param):
-                raise RESTError(
-                    "InvalidParameterValueException", "Missing {}".format(param)
-                )
+                raise RESTError("InvalidParameterValueException", f"Missing {param}")
 
         # Validate function name
         func = self._lambdas.get_function_by_name_or_arn(spec.get("FunctionName", ""))
@@ -1158,19 +1133,15 @@ class LambdaBackend(BaseBackend):
                         "ResourceConflictException", "The resource already exists."
                     )
                 if queue.fifo_queue:
-                    raise RESTError(
-                        "InvalidParameterValueException",
-                        "{} is FIFO".format(queue.queue_arn),
-                    )
-                else:
-                    spec.update({"FunctionArn": func.function_arn})
-                    esm = EventSourceMapping(spec)
-                    self._event_source_mappings[esm.uuid] = esm
+                    raise RESTError("InvalidParameterValueException", f"{queue.queue_arn} is FIFO")
+                spec.update({"FunctionArn": func.function_arn})
+                esm = EventSourceMapping(spec)
+                self._event_source_mappings[esm.uuid] = esm
 
-                    # Set backend function on queue
-                    queue.lambda_event_source_mappings[esm.function_arn] = esm
+                # Set backend function on queue
+                queue.lambda_event_source_mappings[esm.function_arn] = esm
 
-                    return esm
+                return esm
         for stream in json.loads(
             dynamodbstreams_backends[self.region_name].list_streams()
         )["Streams"]:
@@ -1188,9 +1159,7 @@ class LambdaBackend(BaseBackend):
         required = ["LayerName", "Content"]
         for param in required:
             if not spec.get(param):
-                raise RESTError(
-                    "InvalidParameterValueException", "Missing {}".format(param)
-                )
+                raise RESTError("InvalidParameterValueException", f"Missing {param}")
         layer_version = LayerVersion(spec, self.region_name)
         self._layers.put_layer_version(layer_version)
         return layer_version
@@ -1253,9 +1222,7 @@ class LambdaBackend(BaseBackend):
         return self._lambdas.del_function(function_name, qualifier)
 
     def list_functions(self, func_version=None):
-        if func_version == "ALL":
-            return self._lambdas.all()
-        return self._lambdas.latest()
+        return self._lambdas.all() if func_version == "ALL" else self._lambdas.latest()
 
     def send_sqs_batch(self, function_arn, messages, queue_arn):
         success = True
@@ -1374,8 +1341,7 @@ class LambdaBackend(BaseBackend):
         return True
 
     def untag_resource(self, resource, tagKeys):
-        fn = self.get_function_by_arn(resource)
-        if fn:
+        if fn := self.get_function_by_arn(resource):
             for key in tagKeys:
                 try:
                     del fn.tags[key]
@@ -1402,14 +1368,11 @@ class LambdaBackend(BaseBackend):
         return fn.policy.wire_format()
 
     def update_function_code(self, function_name, qualifier, body):
-        fn = self.get_function(function_name, qualifier)
-
-        if fn:
+        if fn := self.get_function(function_name, qualifier):
             if body.get("Publish", False):
                 fn = self.publish_function(function_name)
 
-            config = fn.update_function_code(body)
-            return config
+            return fn.update_function_code(body)
         else:
             return None
 
@@ -1419,8 +1382,7 @@ class LambdaBackend(BaseBackend):
         return fn.update_configuration(body) if fn else None
 
     def invoke(self, function_name, qualifier, body, headers, response_headers):
-        fn = self.get_function(function_name, qualifier)
-        if fn:
+        if fn := self.get_function(function_name, qualifier):
             payload = fn.invoke(body, headers, response_headers)
             response_headers["Content-Length"] = str(len(payload))
             return payload
@@ -1446,9 +1408,11 @@ def do_validate_s3():
     return os.environ.get("VALIDATE_LAMBDA_S3", "") in ["", "1", "true"]
 
 
-lambda_backends = {}
-for region in Session().get_available_regions("lambda"):
-    lambda_backends[region] = LambdaBackend(region)
+lambda_backends = {
+    region: LambdaBackend(region)
+    for region in Session().get_available_regions("lambda")
+}
+
 for region in Session().get_available_regions("lambda", partition_name="aws-us-gov"):
     lambda_backends[region] = LambdaBackend(region)
 for region in Session().get_available_regions("lambda", partition_name="aws-cn"):

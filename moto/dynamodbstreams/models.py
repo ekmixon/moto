@@ -29,11 +29,7 @@ class ShardIterator(BaseModel):
 
     @property
     def arn(self):
-        return "{}/stream/{}|1|{}".format(
-            self.stream_shard.table.table_arn,
-            self.stream_shard.table.latest_stream_label,
-            self.id,
-        )
+        return f"{self.stream_shard.table.table_arn}/stream/{self.stream_shard.table.latest_stream_label}|1|{self.id}"
 
     def to_json(self):
         return {"ShardIterator": self.arn}
@@ -138,9 +134,11 @@ class DynamoDBStreamsBackend(BaseBackend):
         return json.dumps(shard_iterator.get(limit), cls=DynamoJsonEncoder)
 
 
-dynamodbstreams_backends = {}
-for region in Session().get_available_regions("dynamodbstreams"):
-    dynamodbstreams_backends[region] = DynamoDBStreamsBackend(region)
+dynamodbstreams_backends = {
+    region: DynamoDBStreamsBackend(region)
+    for region in Session().get_available_regions("dynamodbstreams")
+}
+
 for region in Session().get_available_regions(
     "dynamodbstreams", partition_name="aws-us-gov"
 ):

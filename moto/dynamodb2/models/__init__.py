@@ -51,11 +51,10 @@ class LimitedSizeDict(dict):
 
     def __setitem__(self, key, value):
         current_item_size = sum(
-            [
-                item.size() if type(item) == DynamoType else bytesize(str(item))
-                for item in (list(self.keys()) + list(self.values()))
-            ]
+            item.size() if type(item) == DynamoType else bytesize(str(item))
+            for item in (list(self.keys()) + list(self.values()))
         )
+
         new_item_size = bytesize(key) + (
             value.size() if type(value) == DynamoType else bytesize(str(value))
         )
@@ -97,18 +96,21 @@ class Item(BaseModel):
         return sum(bytesize(key) + value.size() for key, value in self.attrs.items())
 
     def to_json(self):
-        attributes = {}
-        for attribute_key, attribute in self.attrs.items():
-            attributes[attribute_key] = {attribute.type: attribute.value}
+        attributes = {
+            attribute_key: {attribute.type: attribute.value}
+            for attribute_key, attribute in self.attrs.items()
+        }
 
         return {"Attributes": attributes}
 
     def describe_attrs(self, attributes):
         if attributes:
-            included = {}
-            for key, value in self.attrs.items():
-                if key in attributes:
-                    included[key] = value
+            included = {
+                key: value
+                for key, value in self.attrs.items()
+                if key in attributes
+            }
+
         else:
             included = self.attrs
         return {"Item": included}
@@ -135,21 +137,21 @@ class Item(BaseModel):
             new_value = list(update_action["Value"].values())[0]
             if action == "PUT":
                 # TODO deal with other types
-                if set(update_action["Value"].keys()) == set(["SS"]):
+                if set(update_action["Value"].keys()) == {"SS"}:
                     self.attrs[attribute_name] = DynamoType({"SS": new_value})
                 elif isinstance(new_value, list):
                     self.attrs[attribute_name] = DynamoType({"L": new_value})
                 elif isinstance(new_value, dict):
                     self.attrs[attribute_name] = DynamoType({"M": new_value})
-                elif set(update_action["Value"].keys()) == set(["N"]):
+                elif set(update_action["Value"].keys()) == {"N"}:
                     self.attrs[attribute_name] = DynamoType({"N": new_value})
-                elif set(update_action["Value"].keys()) == set(["NULL"]):
+                elif set(update_action["Value"].keys()) == {"NULL"}:
                     if attribute_name in self.attrs:
                         del self.attrs[attribute_name]
                 else:
                     self.attrs[attribute_name] = DynamoType({"S": new_value})
             elif action == "ADD":
-                if set(update_action["Value"].keys()) == set(["N"]):
+                if set(update_action["Value"].keys()) == {"N"}:
                     existing = self.attrs.get(attribute_name, DynamoType({"N": "0"}))
                     self.attrs[attribute_name] = DynamoType(
                         {
@@ -159,7 +161,7 @@ class Item(BaseModel):
                             )
                         }
                     )
-                elif set(update_action["Value"].keys()) == set(["SS"]):
+                elif set(update_action["Value"].keys()) == {"SS"}:
                     existing = self.attrs.get(attribute_name, DynamoType({"SS": {}}))
                     new_set = set(existing.value).union(set(new_value))
                     self.attrs[attribute_name] = DynamoType({"SS": list(new_set)})
@@ -170,22 +172,22 @@ class Item(BaseModel):
                 else:
                     # TODO: implement other data types
                     raise NotImplementedError(
-                        "ADD not supported for %s"
-                        % ", ".join(update_action["Value"].keys())
+                        f'ADD not supported for {", ".join(update_action["Value"].keys())}'
                     )
+
             elif action == "DELETE":
-                if set(update_action["Value"].keys()) == set(["SS"]):
+                if set(update_action["Value"].keys()) == {"SS"}:
                     existing = self.attrs.get(attribute_name, DynamoType({"SS": {}}))
                     new_set = set(existing.value).difference(set(new_value))
                     self.attrs[attribute_name] = DynamoType({"SS": list(new_set)})
                 else:
                     raise NotImplementedError(
-                        "ADD not supported for %s"
-                        % ", ".join(update_action["Value"].keys())
+                        f'ADD not supported for {", ".join(update_action["Value"].keys())}'
                     )
+
             else:
                 raise NotImplementedError(
-                    "%s action not support for update_with_attribute_updates" % action
+                    f"{action} action not support for update_with_attribute_updates"
                 )
 
     # Filter using projection_expression
@@ -193,17 +195,19 @@ class Item(BaseModel):
     def filter(self, projection_expression):
         expressions = [x.strip() for x in projection_expression.split(",")]
         top_level_expressions = [
-            expr[0 : expr.index(".")] for expr in expressions if "." in expr
+            expr[: expr.index(".")] for expr in expressions if "." in expr
         ]
+
         for attr in list(self.attrs):
             if attr not in expressions and attr not in top_level_expressions:
                 self.attrs.pop(attr)
             if attr in top_level_expressions:
                 relevant_expressions = [
-                    expr[len(attr + ".") :]
+                    expr[len(f"{attr}.") :]
                     for expr in expressions
-                    if expr.startswith(attr + ".")
+                    if expr.startswith(f"{attr}.")
                 ]
+
                 self.attrs[attr].filter(relevant_expressions)
 
 
@@ -429,12 +433,14 @@ class Table(CloudFormationModel):
         self.throughput["NumberOfDecreasesToday"] = 0
         self.indexes = [
             LocalSecondaryIndex.create(i, self.table_key_attrs)
-            for i in (indexes if indexes else [])
+            for i in indexes or []
         ]
+
         self.global_indexes = [
             GlobalSecondaryIndex.create(i, self.table_key_attrs)
-            for i in (global_indexes if global_indexes else [])
+            for i in global_indexes or []
         ]
+
         self.created_at = datetime.datetime.utcnow()
         self.items = defaultdict(dict)
         self.table_arn = self._generate_arn(table_name)
@@ -511,20 +517,18 @@ class Table(CloudFormationModel):
         if "StreamSpecification" in properties:
             params["streams"] = properties["StreamSpecification"]
 
-        table = dynamodb_backends[region_name].create_table(
+        return dynamodb_backends[region_name].create_table(
             name=resource_name, **params
         )
-        return table
 
     @classmethod
     def delete_from_cloudformation_json(
         cls, resource_name, cloudformation_json, region_name
     ):
-        table = dynamodb_backends[region_name].delete_table(name=resource_name)
-        return table
+        return dynamodb_backends[region_name].delete_table(name=resource_name)
 
     def _generate_arn(self, name):
-        return "arn:aws:dynamodb:us-east-1:123456789011:table/" + name
+        return f"arn:aws:dynamodb:us-east-1:123456789011:table/{name}"
 
     def set_stream_specification(self, streams):
         self.stream_specification = streams
@@ -559,19 +563,17 @@ class Table(CloudFormationModel):
             results[base_key]["StreamSpecification"] = self.stream_specification
             if self.latest_stream_label:
                 results[base_key]["LatestStreamLabel"] = self.latest_stream_label
-                results[base_key]["LatestStreamArn"] = (
-                    self.table_arn + "/stream/" + self.latest_stream_label
-                )
+                results[base_key][
+                    "LatestStreamArn"
+                ] = f"{self.table_arn}/stream/{self.latest_stream_label}"
+
         return results
 
     def __len__(self):
-        count = 0
-        for key, value in self.items.items():
-            if self.has_range_key:
-                count += len(value)
-            else:
-                count += 1
-        return count
+        return sum(
+            len(value) if self.has_range_key else 1
+            for key, value in self.items.items()
+        )
 
     @property
     def hash_key_names(self):
@@ -732,12 +734,12 @@ class Table(CloudFormationModel):
 
         if index_name:
             all_indexes = self.all_indexes()
-            indexes_by_name = dict((i.name, i) for i in all_indexes)
+            indexes_by_name = {i.name: i for i in all_indexes}
             if index_name not in indexes_by_name:
                 raise ValueError(
-                    "Invalid index: %s for table: %s. Available indexes are: %s"
-                    % (index_name, self.name, ", ".join(indexes_by_name.keys()))
+                    f'Invalid index: {index_name} for table: {self.name}. Available indexes are: {", ".join(indexes_by_name.keys())}'
                 )
+
 
             index = indexes_by_name[index_name]
             try:
@@ -745,7 +747,7 @@ class Table(CloudFormationModel):
                     key for key in index.schema if key["KeyType"] == "HASH"
                 ][0]
             except IndexError:
-                raise ValueError("Missing Hash Key. KeySchema: %s" % index.name)
+                raise ValueError(f"Missing Hash Key. KeySchema: {index.name}")
 
             try:
                 index_range_key = [
@@ -776,9 +778,9 @@ class Table(CloudFormationModel):
         if range_comparison:
             if index_name and not index_range_key:
                 raise ValueError(
-                    "Range Key comparison but no range key found for index: %s"
-                    % index_name
+                    f"Range Key comparison but no range key found for index: {index_name}"
                 )
+
 
             elif index_name:
                 for result in possible_results:
@@ -848,8 +850,7 @@ class Table(CloudFormationModel):
     def all_items(self):
         for hash_set in self.items.values():
             if self.range_key_attr:
-                for item in hash_set.values():
-                    yield item
+                yield from hash_set.values()
             else:
                 yield hash_set
 
@@ -858,7 +859,7 @@ class Table(CloudFormationModel):
 
     def get_index(self, index_name, err=None):
         all_indexes = self.all_indexes()
-        indexes_by_name = dict((i.name, i) for i in all_indexes)
+        indexes_by_name = {i.name: i for i in all_indexes}
         if err and index_name not in indexes_by_name:
             raise err
         return indexes_by_name[index_name]
@@ -866,16 +867,15 @@ class Table(CloudFormationModel):
     def has_idx_items(self, index_name):
 
         idx = self.get_index(index_name)
-        idx_col_set = set([i["AttributeName"] for i in idx.schema])
+        idx_col_set = {i["AttributeName"] for i in idx.schema}
 
         for hash_set in self.items.values():
             if self.range_key_attr:
                 for item in hash_set.values():
                     if idx_col_set.issubset(set(item.attrs)):
                         yield item
-            else:
-                if idx_col_set.issubset(set(hash_set.attrs)):
-                    yield hash_set
+            elif idx_col_set.issubset(set(hash_set.attrs)):
+                yield hash_set
 
     def scan(
         self,
@@ -891,8 +891,9 @@ class Table(CloudFormationModel):
 
         if index_name:
             err = InvalidIndexNameError(
-                "The table does not have the specified index: %s" % index_name
+                f"The table does not have the specified index: {index_name}"
             )
+
             self.get_index(index_name, err)
             items = self.has_idx_items(index_name)
         else:
@@ -905,9 +906,7 @@ class Table(CloudFormationModel):
                 attribute_name,
                 (comparison_operator, comparison_objs),
             ) in filters.items():
-                attribute = item.attrs.get(attribute_name)
-
-                if attribute:
+                if attribute := item.attrs.get(attribute_name):
                     # Attribute found
                     if not attribute.compare(comparison_operator, comparison_objs):
                         passes_all_conditions = False
@@ -992,12 +991,11 @@ class RestoredTable(Table):
 
     @staticmethod
     def _parse_params_from_backup(backup):
-        params = {
+        return {
             "schema": copy.deepcopy(backup.table.schema),
             "attr": copy.deepcopy(backup.table.attr),
             "throughput": copy.deepcopy(backup.table.throughput),
         }
-        return params
 
     def describe(self, base_key="TableDescription"):
         result = super(RestoredTable, self).describe(base_key=base_key)
@@ -1024,10 +1022,10 @@ class Backup(object):
 
     def _make_identifier(self):
         timestamp = int(unix_time_millis(self.creation_date_time))
-        timestamp_padded = str("0" + str(timestamp))[-16:16]
+        timestamp_padded = str(f"0{timestamp}")[-16:16]
         guid = str(uuid.uuid4())
         guid_shortened = guid[:8]
-        return "{}-{}".format(timestamp_padded, guid_shortened)
+        return f"{timestamp_padded}-{guid_shortened}"
 
     @property
     def arn(self):
@@ -1040,7 +1038,7 @@ class Backup(object):
 
     @property
     def details(self):
-        details = {
+        return {
             "BackupArn": self.arn,
             "BackupName": self.name,
             "BackupSizeBytes": 123,
@@ -1048,11 +1046,10 @@ class Backup(object):
             "BackupType": self.type,
             "BackupCreationDateTime": unix_time(self.creation_date_time),
         }
-        return details
 
     @property
     def summary(self):
-        summary = {
+        return {
             "TableName": self.table.name,
             # 'TableId': 'string',
             "TableArn": self.table.table_arn,
@@ -1064,7 +1061,6 @@ class Backup(object):
             "BackupType": self.type,
             "BackupSizeBytes": 123,
         }
-        return summary
 
     @property
     def description(self):
@@ -1072,11 +1068,10 @@ class Backup(object):
         source_table_details["TableCreationDateTime"] = source_table_details[
             "CreationDateTime"
         ]
-        description = {
+        return {
             "BackupDetails": self.details,
             "SourceTableDetails": source_table_details,
         }
-        return description
 
 
 class DynamoDBBackend(BaseBackend):
@@ -1117,7 +1112,7 @@ class DynamoDBBackend(BaseBackend):
     def describe_endpoints(self):
         return [
             {
-                "Address": "dynamodb.{}.amazonaws.com".format(self.region_name),
+                "Address": f"dynamodb.{self.region_name}.amazonaws.com",
                 "CachePeriodInMinutes": 1440,
             }
         ]
@@ -1154,11 +1149,7 @@ class DynamoDBBackend(BaseBackend):
         else:
             start = 0
 
-        if limit:
-            tables = all_tables[start : start + limit]
-        else:
-            tables = all_tables[start:]
-
+        tables = all_tables[start : start + limit] if limit else all_tables[start:]
         if limit and len(all_tables) > start + limit:
             return tables, tables[-1]
         return tables, None
@@ -1194,18 +1185,15 @@ class DynamoDBBackend(BaseBackend):
 
     def update_table_global_indexes(self, name, global_index_updates):
         table = self.tables[name]
-        gsis_by_name = dict((i.name, i) for i in table.global_indexes)
+        gsis_by_name = {i.name: i for i in table.global_indexes}
         for gsi_update in global_index_updates:
             gsi_to_create = gsi_update.get("Create")
             gsi_to_update = gsi_update.get("Update")
-            gsi_to_delete = gsi_update.get("Delete")
-
-            if gsi_to_delete:
+            if gsi_to_delete := gsi_update.get("Delete"):
                 index_name = gsi_to_delete["IndexName"]
                 if index_name not in gsis_by_name:
                     raise ValueError(
-                        "Global Secondary Index does not exist, but tried to delete: %s"
-                        % gsi_to_delete["IndexName"]
+                        f"Global Secondary Index does not exist, but tried to delete: {index_name}"
                     )
 
                 del gsis_by_name[index_name]
@@ -1214,17 +1202,17 @@ class DynamoDBBackend(BaseBackend):
                 index_name = gsi_to_update["IndexName"]
                 if index_name not in gsis_by_name:
                     raise ValueError(
-                        "Global Secondary Index does not exist, but tried to update: %s"
-                        % index_name
+                        f"Global Secondary Index does not exist, but tried to update: {index_name}"
                     )
+
                 gsis_by_name[index_name].update(gsi_to_update)
 
             if gsi_to_create:
                 if gsi_to_create["IndexName"] in gsis_by_name:
                     raise ValueError(
-                        "Global Secondary Index already exists: %s"
-                        % gsi_to_create["IndexName"]
+                        f'Global Secondary Index already exists: {gsi_to_create["IndexName"]}'
                     )
+
 
                 gsis_by_name[gsi_to_create["IndexName"]] = GlobalSecondaryIndex.create(
                     gsi_to_create, table.table_key_attrs,
@@ -1246,39 +1234,39 @@ class DynamoDBBackend(BaseBackend):
         overwrite=False,
     ):
         table = self.tables.get(table_name)
-        if not table:
-            return None
-        return table.put_item(
-            item_attrs,
-            expected,
-            condition_expression,
-            expression_attribute_names,
-            expression_attribute_values,
-            overwrite,
+        return (
+            table.put_item(
+                item_attrs,
+                expected,
+                condition_expression,
+                expression_attribute_names,
+                expression_attribute_values,
+                overwrite,
+            )
+            if table
+            else None
         )
 
     def get_table_keys_name(self, table_name, keys):
         """
         Given a set of keys, extracts the key and range key
         """
-        table = self.tables.get(table_name)
-        if not table:
+        if not (table := self.tables.get(table_name)):
             return None, None
-        else:
-            if len(keys) == 1:
-                for key in keys:
-                    if key in table.hash_key_names:
-                        return key, None
-            # for potential_hash, potential_range in zip(table.hash_key_names, table.range_key_names):
-            #     if set([potential_hash, potential_range]) == set(keys):
-            #         return potential_hash, potential_range
-            potential_hash, potential_range = None, None
-            for key in set(keys):
+        if len(keys) == 1:
+            for key in keys:
                 if key in table.hash_key_names:
-                    potential_hash = key
-                elif key in table.range_key_names:
-                    potential_range = key
-            return potential_hash, potential_range
+                    return key, None
+        # for potential_hash, potential_range in zip(table.hash_key_names, table.range_key_names):
+        #     if set([potential_hash, potential_range]) == set(keys):
+        #         return potential_hash, potential_range
+        potential_hash, potential_range = None, None
+        for key in set(keys):
+            if key in table.hash_key_names:
+                potential_hash = key
+            elif key in table.range_key_names:
+                potential_range = key
+        return potential_hash, potential_range
 
     def get_keys_value(self, table, keys):
         if table.hash_key_attr not in keys or (

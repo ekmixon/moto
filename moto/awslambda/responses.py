@@ -203,30 +203,29 @@ class LambdaResponse(BaseResponse):
         function_name = unquote(self.path.rsplit("/", 2)[-2])
         qualifier = self._get_param("qualifier")
 
-        payload = self.lambda_backend.invoke(
-            function_name, qualifier, self.body, self.headers, response_headers
-        )
-        if payload:
-            response_headers["content-type"] = "application/json"
-            if request.headers.get("X-Amz-Invocation-Type") == "Event":
-                status_code = 202
-            elif request.headers.get("X-Amz-Invocation-Type") == "DryRun":
-                status_code = 204
-            else:
-                if request.headers.get("X-Amz-Log-Type") != "Tail":
-                    del response_headers["x-amz-log-result"]
-                status_code = 200
-            return status_code, response_headers, payload
-        else:
+        if not (
+            payload := self.lambda_backend.invoke(
+                function_name, qualifier, self.body, self.headers, response_headers
+            )
+        ):
             return 404, response_headers, "{}"
+        response_headers["content-type"] = "application/json"
+        if request.headers.get("X-Amz-Invocation-Type") == "Event":
+            status_code = 202
+        elif request.headers.get("X-Amz-Invocation-Type") == "DryRun":
+            status_code = 204
+        else:
+            if request.headers.get("X-Amz-Log-Type") != "Tail":
+                del response_headers["x-amz-log-result"]
+            status_code = 200
+        return status_code, response_headers, payload
 
     def _invoke_async(self, request, full_url):
         response_headers = {}
 
         function_name = unquote(self.path.rsplit("/", 3)[-3])
 
-        fn = self.lambda_backend.get_function(function_name, None)
-        if fn:
+        if fn := self.lambda_backend.get_function(function_name, None):
             payload = fn.invoke(self.body, self.headers, response_headers)
             response_headers["Content-Length"] = str(len(payload))
             return 202, response_headers, payload
@@ -247,8 +246,9 @@ class LambdaResponse(BaseResponse):
     def _list_versions_by_function(self, function_name):
         result = {"Versions": []}
 
-        functions = self.lambda_backend.list_versions_by_function(function_name)
-        if functions:
+        if functions := self.lambda_backend.list_versions_by_function(
+            function_name
+        ):
             for fn in functions:
                 json_data = fn.get_configuration()
                 result["Versions"].append(json_data)
@@ -273,22 +273,21 @@ class LambdaResponse(BaseResponse):
         return 200, {}, json.dumps(result)
 
     def _get_event_source_mapping(self, uuid):
-        result = self.lambda_backend.get_event_source_mapping(uuid)
-        if result:
+        if result := self.lambda_backend.get_event_source_mapping(uuid):
             return 200, {}, json.dumps(result.get_configuration())
         else:
             return 404, {}, "{}"
 
     def _update_event_source_mapping(self, uuid):
-        result = self.lambda_backend.update_event_source_mapping(uuid, self.json_body)
-        if result:
+        if result := self.lambda_backend.update_event_source_mapping(
+            uuid, self.json_body
+        ):
             return 202, {}, json.dumps(result.get_configuration())
         else:
             return 404, {}, "{}"
 
     def _delete_event_source_mapping(self, uuid):
-        esm = self.lambda_backend.delete_event_source_mapping(uuid)
-        if esm:
+        if esm := self.lambda_backend.delete_event_source_mapping(uuid):
             json_result = esm.get_configuration()
             json_result.update({"State": "Deleting"})
             return 202, {}, json.dumps(json_result)
@@ -299,8 +298,7 @@ class LambdaResponse(BaseResponse):
         function_name = self.path.rsplit("/", 2)[-2]
         description = self._get_param("Description")
 
-        fn = self.lambda_backend.publish_function(function_name, description)
-        if fn:
+        if fn := self.lambda_backend.publish_function(function_name, description):
             config = fn.get_configuration()
             return 201, {}, json.dumps(config)
         else:
@@ -327,9 +325,7 @@ class LambdaResponse(BaseResponse):
         function_name = unquote(self.path.rsplit("/", 1)[-1])
         qualifier = self._get_param("Qualifier", None)
 
-        fn = self.lambda_backend.get_function(function_name, qualifier)
-
-        if fn:
+        if fn := self.lambda_backend.get_function(function_name, qualifier):
             code = fn.get_code()
             code["Configuration"] = self._set_configuration_qualifier(
                 code["Configuration"], qualifier
@@ -342,9 +338,7 @@ class LambdaResponse(BaseResponse):
         function_name = unquote(self.path.rsplit("/", 2)[-2])
         qualifier = self._get_param("Qualifier", None)
 
-        fn = self.lambda_backend.get_function(function_name, qualifier)
-
-        if fn:
+        if fn := self.lambda_backend.get_function(function_name, qualifier):
             configuration = self._set_configuration_qualifier(
                 fn.get_configuration(), qualifier
             )
@@ -353,8 +347,7 @@ class LambdaResponse(BaseResponse):
             return 404, {"x-amzn-ErrorType": "ResourceNotFoundException"}, "{}"
 
     def _get_aws_region(self, full_url):
-        region = self.region_regex.search(full_url)
-        if region:
+        if region := self.region_regex.search(full_url):
             return region.group(1)
         else:
             return self.default_region
@@ -362,8 +355,7 @@ class LambdaResponse(BaseResponse):
     def _list_tags(self, request, full_url):
         function_arn = unquote(self.path.rsplit("/", 1)[-1])
 
-        fn = self.lambda_backend.get_function_by_arn(function_arn)
-        if fn:
+        if fn := self.lambda_backend.get_function_by_arn(function_arn):
             return 200, {}, json.dumps({"Tags": fn.tags})
         else:
             return 404, {}, "{}"
@@ -388,11 +380,9 @@ class LambdaResponse(BaseResponse):
     def _put_configuration(self, request):
         function_name = unquote(self.path.rsplit("/", 2)[-2])
         qualifier = self._get_param("Qualifier", None)
-        resp = self.lambda_backend.update_function_configuration(
+        if resp := self.lambda_backend.update_function_configuration(
             function_name, qualifier, body=self.json_body
-        )
-
-        if resp:
+        ):
             return 200, {}, json.dumps(resp)
         else:
             return 404, {}, "{}"
@@ -400,11 +390,9 @@ class LambdaResponse(BaseResponse):
     def _put_code(self):
         function_name = unquote(self.path.rsplit("/", 2)[-2])
         qualifier = self._get_param("Qualifier", None)
-        resp = self.lambda_backend.update_function_code(
+        if resp := self.lambda_backend.update_function_code(
             function_name, qualifier, body=self.json_body
-        )
-
-        if resp:
+        ):
             return 200, {}, json.dumps(resp)
         else:
             return 404, {}, "{}"

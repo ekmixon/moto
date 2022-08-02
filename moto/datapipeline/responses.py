@@ -8,10 +8,7 @@ class DataPipelineResponse(BaseResponse):
     @property
     def parameters(self):
         # TODO this should really be moved to core/responses.py
-        if self.body:
-            return json.loads(self.body)
-        else:
-            return self.querystring
+        return json.loads(self.body) if self.body else self.querystring
 
     @property
     def datapipeline_backend(self):
@@ -32,10 +29,7 @@ class DataPipelineResponse(BaseResponse):
         pipeline_ids = [pipeline.pipeline_id for pipeline in pipelines]
         max_pipelines = 50
         marker = self.parameters.get("marker")
-        if marker:
-            start = pipeline_ids.index(marker) + 1
-        else:
-            start = 0
+        start = pipeline_ids.index(marker) + 1 if marker else 0
         pipelines_resp = pipelines[start : start + max_pipelines]
         has_more_results = False
         marker = None

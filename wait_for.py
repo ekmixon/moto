@@ -20,8 +20,8 @@ except ImportError:
 
 start_ts = time.time()
 expected_port = os.environ.get("MOTO_PORT", "5000")
-expected_host = "http://localhost:{}/".format(expected_port)
-print("Waiting for service to come up on {}".format(expected_host))
+expected_host = f"http://localhost:{expected_port}/"
+print(f"Waiting for service to come up on {expected_host}")
 while True:
     try:
 

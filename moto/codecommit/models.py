@@ -10,7 +10,7 @@ import uuid
 class CodeCommit(BaseModel):
     def __init__(self, region, repository_description, repository_name):
         current_date = iso_8601_datetime_with_milliseconds(datetime.utcnow())
-        self.repository_metadata = dict()
+        self.repository_metadata = {}
         self.repository_metadata["repositoryName"] = repository_name
         self.repository_metadata[
             "cloneUrlSsh"
@@ -44,8 +44,7 @@ class CodeCommitBackend(BaseBackend):
         )
 
     def create_repository(self, region, repository_name, repository_description):
-        repository = self.repositories.get(repository_name)
-        if repository:
+        if repository := self.repositories.get(repository_name):
             raise RepositoryNameExistsException(repository_name)
 
         self.repositories[repository_name] = CodeCommit(
@@ -55,22 +54,20 @@ class CodeCommitBackend(BaseBackend):
         return self.repositories[repository_name].repository_metadata
 
     def get_repository(self, repository_name):
-        repository = self.repositories.get(repository_name)
-        if not repository:
+        if repository := self.repositories.get(repository_name):
+            return repository.repository_metadata
+        else:
             raise RepositoryDoesNotExistException(repository_name)
 
-        return repository.repository_metadata
-
     def delete_repository(self, repository_name):
-        repository = self.repositories.get(repository_name)
-
-        if repository:
+        if repository := self.repositories.get(repository_name):
             self.repositories.pop(repository_name)
             return repository.repository_metadata.get("repositoryId")
 
         return None
 
 
-codecommit_backends = {}
-for region in Session().get_available_regions("codecommit"):
-    codecommit_backends[region] = CodeCommitBackend()
+codecommit_backends = {
+    region: CodeCommitBackend()
+    for region in Session().get_available_regions("codecommit")
+}

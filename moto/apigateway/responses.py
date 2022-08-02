@@ -59,10 +59,10 @@ class APIGatewayResponse(BaseResponse):
 
     def __validate_endpoint_configuration(self, endpoint_configuration):
         if endpoint_configuration and "types" in endpoint_configuration:
-            invalid_types = list(
-                set(endpoint_configuration["types"]) - set(ENDPOINT_CONFIGURATION_TYPES)
-            )
-            if invalid_types:
+            if invalid_types := list(
+                set(endpoint_configuration["types"])
+                - set(ENDPOINT_CONFIGURATION_TYPES)
+            ):
                 return self.error(
                     "ValidationException",
                     (

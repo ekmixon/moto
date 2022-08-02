@@ -178,8 +178,6 @@ def clean_json(resource_json, resources_map):
                         literal, literal.replace("!", "")
                     )
                 return fn_sub_value
-            pass
-
         if "Fn::ImportValue" in resource_json:
             cleaned_val = clean_json(resource_json["Fn::ImportValue"], resources_map)
             values = [
@@ -196,8 +194,7 @@ def clean_json(resource_json, resources_map):
             region = resource_json.get("Fn::GetAZs") or DEFAULT_REGION
             result = []
             # TODO: make this configurable, to reflect the real AWS AZs
-            for az in ("a", "b", "c", "d"):
-                result.append("%s%s" % (region, az))
+            result.extend(f"{region}{az}" for az in ("a", "b", "c", "d"))
             return result
 
         cleaned_json = {}
@@ -242,7 +239,7 @@ def generate_resource_name(resource_type, stack_name, logical_id):
         # it makes sure to stay under that limit
         name_prefix = "{0}-{1}".format(stack_name, logical_id)
         my_random_suffix = random_suffix()
-        truncated_name_prefix = name_prefix[0 : 32 - (len(my_random_suffix) + 1)]
+        truncated_name_prefix = name_prefix[:32 - (len(my_random_suffix) + 1)]
         # if the truncated name ends in a dash, we'll end up with a double dash in the final name, which is
         # not allowed
         if truncated_name_prefix.endswith("-"):
@@ -293,8 +290,9 @@ def parse_resource_and_generate_name(
         resource_type, resources_map.get("AWS::StackName"), logical_id
     )
 
-    resource_name_property = resource_name_property_from_type(resource_type)
-    if resource_name_property:
+    if resource_name_property := resource_name_property_from_type(
+        resource_type
+    ):
         if (
             "Properties" in resource_json
             and resource_name_property in resource_json["Properties"]
@@ -391,17 +389,14 @@ def parse_condition(condition, resources_map, condition_map):
         return not parse_condition(condition_values[0], resources_map, condition_map)
     elif condition_operator == "Fn::And":
         return all(
-            [
-                parse_condition(condition_value, resources_map, condition_map)
-                for condition_value in condition_values
-            ]
+            parse_condition(condition_value, resources_map, condition_map)
+            for condition_value in condition_values
         )
+
     elif condition_operator == "Fn::Or":
         return any(
-            [
-                parse_condition(condition_value, resources_map, condition_map)
-                for condition_value in condition_values
-            ]
+            parse_condition(condition_value, resources_map, condition_map)
+            for condition_value in condition_values
         )
 
 
@@ -458,17 +453,16 @@ class ResourceMap(collections_abc.Mapping):
 
         if resource_logical_id in self._parsed_resources:
             return self._parsed_resources[resource_logical_id]
-        else:
-            resource_json = self._resource_json_map.get(resource_logical_id)
+        resource_json = self._resource_json_map.get(resource_logical_id)
 
-            if not resource_json:
-                raise KeyError(resource_logical_id)
-            new_resource = parse_and_create_resource(
-                resource_logical_id, resource_json, self, self._region_name
-            )
-            if new_resource is not None:
-                self._parsed_resources[resource_logical_id] = new_resource
-            return new_resource
+        if not resource_json:
+            raise KeyError(resource_logical_id)
+        new_resource = parse_and_create_resource(
+            resource_logical_id, resource_json, self, self._region_name
+        )
+        if new_resource is not None:
+            self._parsed_resources[resource_logical_id] = new_resource
+        return new_resource
 
     def __iter__(self):
         return iter(self.resources)
@@ -528,9 +522,7 @@ class ResourceMap(collections_abc.Mapping):
         # actual value from parameter store
         parameter = ssm_backends[self._region_name].get_parameter(value, False)
         actual_value = parameter.value
-        if value_type.find("List") > 0:
-            return actual_value.split(",")
-        return actual_value
+        return actual_value.split(",") if value_type.find("List") > 0 else actual_value
 
     def load_parameters(self):
         parameter_slots = self._template.get("Parameters", {})
@@ -657,15 +649,13 @@ class ResourceMap(collections_abc.Mapping):
         old = self._resource_json_map
         new = other_template["Resources"]
 
-        resource_names_by_action = {
+        return {
             "Add": set(new) - set(old),
-            "Modify": set(
+            "Modify": {
                 name for name in new if name in old and new[name] != old[name]
-            ),
+            },
             "Remove": set(old) - set(new),
         }
-
-        return resource_names_by_action
 
     def build_change_set_actions(self, template, parameters):
 
@@ -798,21 +788,20 @@ class OutputMap(collections_abc.Mapping):
 
         # Create the default resources
         self._resource_map = resources
-        self._parsed_outputs = dict()
+        self._parsed_outputs = {}
 
     def __getitem__(self, key):
         output_logical_id = key
 
         if output_logical_id in self._parsed_outputs:
             return self._parsed_outputs[output_logical_id]
-        else:
-            output_json = self._output_json_map.get(output_logical_id)
-            new_output = parse_output(
-                output_logical_id, output_json, self._resource_map
-            )
-            if new_output:
-                self._parsed_outputs[output_logical_id] = new_output
-            return new_output
+        output_json = self._output_json_map.get(output_logical_id)
+        new_output = parse_output(
+            output_logical_id, output_json, self._resource_map
+        )
+        if new_output:
+            self._parsed_outputs[output_logical_id] = new_output
+        return new_output
 
     def __iter__(self):
         return iter(self.outputs)

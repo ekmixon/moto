@@ -26,21 +26,22 @@ class CloudWatchResponse(BaseResponse):
         if metrics:
             metric_data_queries = []
             for metric in metrics:
-                dimensions = []
                 dims = (
                     metric.get("MetricStat", {})
                     .get("Metric", {})
                     .get("Dimensions.member", [])
                 )
-                for dim in dims:
-                    dimensions.append(
-                        Dimension(name=dim.get("Name"), value=dim.get("Value"))
-                    )
+                dimensions = [
+                    Dimension(name=dim.get("Name"), value=dim.get("Value"))
+                    for dim in dims
+                ]
+
                 metric_stat = None
-                stat_metric_name = (
-                    metric.get("MetricStat", {}).get("Metric", {}).get("MetricName")
-                )
-                if stat_metric_name:
+                if stat_metric_name := (
+                    metric.get("MetricStat", {})
+                    .get("Metric", {})
+                    .get("MetricName")
+                ):
                     stat_details = metric.get("MetricStat", {})
                     stat_metric_ns = stat_details.get("Metric", {}).get("Namespace")
                     metric_stat = MetricStat(
@@ -237,12 +238,11 @@ class CloudWatchResponse(BaseResponse):
 
     @staticmethod
     def filter_alarms(alarms, metric_name, namespace):
-        metric_filtered_alarms = []
-
-        for alarm in alarms:
-            if alarm.metric_name == metric_name and alarm.namespace == namespace:
-                metric_filtered_alarms.append(alarm)
-        return metric_filtered_alarms
+        return [
+            alarm
+            for alarm in alarms
+            if alarm.metric_name == metric_name and alarm.namespace == namespace
+        ]
 
     @amzn_request_id
     def describe_alarms_for_metric(self):

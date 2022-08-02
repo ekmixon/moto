@@ -107,10 +107,7 @@ class Directory(BaseModel):  # pylint: disable=too-many-instance-attributes
         """
         ip_addrs = []
         for subnet in subnets:
-            ips = ipaddress.ip_network(subnet.cidr_block)
-            # Not sure if the following could occur, but if it does,
-            # the situation will be ignored.
-            if ips:
+            if ips := ipaddress.ip_network(subnet.cidr_block):
                 ip_addrs.append(str(ips[1]) if ips.num_addresses > 1 else str(ips[0]))
         return ip_addrs
 
@@ -216,7 +213,7 @@ class DirectoryServiceBackend(BaseBackend):
         size,
         connect_settings,
         tags,
-    ):  # pylint: disable=too-many-arguments
+    ):    # pylint: disable=too-many-arguments
         """Create a fake AD Connector."""
         if len(self.directories) > Directory.CONNECTED_DIRECTORIES_LIMIT:
             raise DirectoryLimitExceededException(
@@ -251,8 +248,7 @@ class DirectoryServiceBackend(BaseBackend):
         # ConnectSettings and VpcSettings both have a VpcId and Subnets.
         subnets = self._get_subnets(region, connect_settings)
 
-        errmsg = self.tagger.validate_tags(tags or [])
-        if errmsg:
+        if errmsg := self.tagger.validate_tags(tags or []):
             raise ValidationException(errmsg)
         if len(tags) > Directory.MAX_TAGS_PER_DIRECTORY:
             raise DirectoryLimitExceededException("Tag Limit is exceeding")
@@ -273,7 +269,7 @@ class DirectoryServiceBackend(BaseBackend):
 
     def create_directory(
         self, region, name, short_name, password, description, size, vpc_settings, tags
-    ):  # pylint: disable=too-many-arguments
+    ):    # pylint: disable=too-many-arguments
         """Create a fake Simple Ad Directory."""
         if len(self.directories) > Directory.CLOUDONLY_DIRECTORIES_LIMIT:
             raise DirectoryLimitExceededException(
@@ -300,8 +296,7 @@ class DirectoryServiceBackend(BaseBackend):
         )
         subnets = self._get_subnets(region, vpc_settings)
 
-        errmsg = self.tagger.validate_tags(tags or [])
-        if errmsg:
+        if errmsg := self.tagger.validate_tags(tags or []):
             raise ValidationException(errmsg)
         if len(tags) > Directory.MAX_TAGS_PER_DIRECTORY:
             raise DirectoryLimitExceededException("Tag Limit is exceeding")
@@ -361,7 +356,7 @@ class DirectoryServiceBackend(BaseBackend):
         vpc_settings,
         edition,
         tags,
-    ):  # pylint: disable=too-many-arguments
+    ):    # pylint: disable=too-many-arguments
         """Create a fake Microsoft Ad Directory."""
         if len(self.directories) > Directory.CLOUDONLY_MICROSOFT_AD_LIMIT:
             raise DirectoryLimitExceededException(
@@ -386,8 +381,7 @@ class DirectoryServiceBackend(BaseBackend):
         )
         subnets = self._get_subnets(region, vpc_settings)
 
-        errmsg = self.tagger.validate_tags(tags or [])
-        if errmsg:
+        if errmsg := self.tagger.validate_tags(tags or []):
             raise ValidationException(errmsg)
         if len(tags) > Directory.MAX_TAGS_PER_DIRECTORY:
             raise DirectoryLimitExceededException("Tag Limit is exceeding")
@@ -486,8 +480,7 @@ class DirectoryServiceBackend(BaseBackend):
     def add_tags_to_resource(self, resource_id, tags):
         """Add or overwrite one or more tags for specified directory."""
         self._validate_directory_id(resource_id)
-        errmsg = self.tagger.validate_tags(tags)
-        if errmsg:
+        if errmsg := self.tagger.validate_tags(tags):
             raise ValidationException(errmsg)
         if len(tags) > Directory.MAX_TAGS_PER_DIRECTORY:
             raise TagLimitExceededException("Tag limit exceeded")
@@ -507,9 +500,11 @@ class DirectoryServiceBackend(BaseBackend):
         return self.tagger.list_tags_for_resource(resource_id).get("Tags")
 
 
-ds_backends = {}
-for available_region in Session().get_available_regions("ds"):
-    ds_backends[available_region] = DirectoryServiceBackend(available_region)
+ds_backends = {
+    available_region: DirectoryServiceBackend(available_region)
+    for available_region in Session().get_available_regions("ds")
+}
+
 for available_region in Session().get_available_regions(
     "ds", partition_name="aws-us-gov"
 ):

@@ -164,4 +164,4 @@ class InvalidToken(AWSError):
     STATUS = 400
 
     def __init__(self, message="Invalid token"):
-        super(InvalidToken, self).__init__("Invalid Token: {}".format(message))
+        super(InvalidToken, self).__init__(f"Invalid Token: {message}")

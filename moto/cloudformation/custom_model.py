@@ -13,7 +13,7 @@ class CustomModel(CloudFormationModel):
         self.request_id = request_id
         self.logical_id = logical_id
         self.resource_name = resource_name
-        self.data = dict()
+        self.data = {}
         self._finished = False
 
     def set_data(self, data):
@@ -85,6 +85,4 @@ class CustomModel(CloudFormationModel):
         return True
 
     def get_cfn_attribute(self, attribute_name):
-        if attribute_name in self.data:
-            return self.data[attribute_name]
-        return None
+        return self.data[attribute_name] if attribute_name in self.data else None

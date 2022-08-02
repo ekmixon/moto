@@ -298,7 +298,7 @@ class DepthFirstTraverser(object):
 
     def nodes_to_be_processed(self):
         """Cached accessor for getting Node types that need to be processed."""
-        return tuple(k for k in self._processing_map().keys())
+        return tuple(self._processing_map().keys())
 
     def process(self, node):
         """Process a Node"""
@@ -367,5 +367,4 @@ class NodeDepthLeftTypeFetcher(object):
             candidate = self.queue.popleft()
             if isinstance(candidate, self.node_type):
                 return candidate
-        else:
-            raise StopIteration
+        raise StopIteration

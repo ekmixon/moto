@@ -19,11 +19,10 @@ def read(*parts):
 
 def get_version():
     version_file = read("moto", "__init__.py")
-    version_match = re.search(
+    if version_match := re.search(
         r'^__version__ = [\'"]([^\'"]*)[\'"]', version_file, re.MULTILINE
-    )
-    if version_match:
-        return version_match.group(1)
+    ):
+        return version_match[1]
     raise RuntimeError("Unable to find version string.")
 
 
@@ -70,33 +69,31 @@ all_extra_deps = [
 ]
 all_server_deps = all_extra_deps + ["flask", "flask-cors"]
 
-extras_per_service = {}
-for service_name in [
-    service[5:]
-    for service in dir(service_list)
-    if service.startswith("mock_") and not service == "mock_all"
-]:
-    extras_per_service[service_name] = []
-extras_per_service.update(
-    {
-        "apigateway": [_dep_python_jose, _dep_python_jose_ecdsa_pin],
-        "awslambda": [_dep_docker],
-        "batch": [_dep_docker],
-        "cloudformation": [_dep_docker, _dep_PyYAML, _dep_cfn_lint],
-        "cognitoidp": [_dep_python_jose, _dep_python_jose_ecdsa_pin],
-        "ec2": [_dep_sshpubkeys],
-        "iotdata": [_dep_jsondiff],
-        "s3": [_dep_PyYAML],
-        "ses": [],
-        "sns": [],
-        "sqs": [],
-        "ssm": [_dep_PyYAML, _dep_dataclasses],
-        # XRay module uses pkg_resources, but doesn't have an explicit
-        # dependency listed.  This should be fixed in the next version:
-        # https://github.com/aws/aws-xray-sdk-python/issues/305
-        "xray": [_dep_aws_xray_sdk, _setuptools],
-    }
-)
+extras_per_service = {
+    service_name: []
+    for service_name in [
+        service[5:]
+        for service in dir(service_list)
+        if service.startswith("mock_") and service != "mock_all"
+    ]
+} | {
+    "apigateway": [_dep_python_jose, _dep_python_jose_ecdsa_pin],
+    "awslambda": [_dep_docker],
+    "batch": [_dep_docker],
+    "cloudformation": [_dep_docker, _dep_PyYAML, _dep_cfn_lint],
+    "cognitoidp": [_dep_python_jose, _dep_python_jose_ecdsa_pin],
+    "ec2": [_dep_sshpubkeys],
+    "iotdata": [_dep_jsondiff],
+    "s3": [_dep_PyYAML],
+    "ses": [],
+    "sns": [],
+    "sqs": [],
+    "ssm": [_dep_PyYAML, _dep_dataclasses],
+    # XRay module uses pkg_resources, but doesn't have an explicit
+    # dependency listed.  This should be fixed in the next version:
+    # https://github.com/aws/aws-xray-sdk-python/issues/305
+    "xray": [_dep_aws_xray_sdk, _setuptools],
+}
 
 # When a Table has a Stream, we'll always need to import AWSLambda to search for a corresponding function to send the table data to
 extras_per_service["dynamodb2"] = extras_per_service["awslambda"]
@@ -108,10 +105,7 @@ extras_per_service["ds"] = extras_per_service["ec2"]
 extras_require = {
     "all": all_extra_deps,
     "server": all_server_deps,
-}
-
-extras_require.update(extras_per_service)
-
+} | extras_per_service
 
 setup(
     name="moto",

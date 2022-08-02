@@ -17,8 +17,7 @@ def validate_args(validators):
     """
     err_msgs = []
     for (func, fieldname, value) in validators:
-        msg = func(value)
-        if msg:
+        if msg := func(value):
             err_msgs.append((fieldname, value, msg))
     if err_msgs:
         raise DsValidationException(err_msgs)
@@ -30,9 +29,11 @@ def validate_alias(value):
         return "have length less than or equal to 62"
 
     alias_pattern = r"^(?!D-|d-)([\da-zA-Z]+)([-]*[\da-zA-Z])*$"
-    if not re.match(alias_pattern, value):
-        return fr"satisfy regular expression pattern: {alias_pattern}"
-    return ""
+    return (
+        ""
+        if re.match(alias_pattern, value)
+        else fr"satisfy regular expression pattern: {alias_pattern}"
+    )
 
 
 def validate_description(value):
@@ -45,9 +46,11 @@ def validate_description(value):
 def validate_directory_id(value):
     """Raise exception if the directory id is invalid."""
     id_pattern = r"^d-[0-9a-f]{10}$"
-    if not re.match(id_pattern, value):
-        return fr"satisfy regular expression pattern: {id_pattern}"
-    return ""
+    return (
+        ""
+        if re.match(id_pattern, value)
+        else fr"satisfy regular expression pattern: {id_pattern}"
+    )
 
 
 def validate_dns_ips(value):
@@ -56,10 +59,14 @@ def validate_dns_ips(value):
         r"^(?:(?:25[0-5]|2[0-4][0-9]|[01]?[0-9][0-9]?)\.){3}"
         r"(?:25[0-5]|2[0-4][0-9]|[01]?[0-9][0-9]?)$"
     )
-    for dnsip in value:
-        if not re.match(dnsip_pattern, dnsip):
-            return fr"satisfy regular expression pattern: {dnsip_pattern}"
-    return ""
+    return next(
+        (
+            fr"satisfy regular expression pattern: {dnsip_pattern}"
+            for dnsip in value
+            if not re.match(dnsip_pattern, dnsip)
+        ),
+        "",
+    )
 
 
 def validate_edition(value):
@@ -72,9 +79,11 @@ def validate_edition(value):
 def validate_name(value):
     """Raise exception if name fails to match constraints."""
     name_pattern = r"^([a-zA-Z0-9]+[\.-])+([a-zA-Z0-9])+$"
-    if not re.match(name_pattern, value):
-        return fr"satisfy regular expression pattern: {name_pattern}"
-    return ""
+    return (
+        ""
+        if re.match(name_pattern, value)
+        else fr"satisfy regular expression pattern: {name_pattern}"
+    )
 
 
 def validate_password(value):
@@ -85,9 +94,11 @@ def validate_password(value):
         r"(?=.*[^A-Za-z0-9\s])(?=.*[A-Z])(?=.*[a-z])|"
         r"(?=.*\d)(?=.*[A-Z])(?=.*[^A-Za-z0-9\s]))^.*$"
     )
-    if not re.match(passwd_pattern, value):
-        return fr"satisfy regular expression pattern: {passwd_pattern}"
-    return ""
+    return (
+        ""
+        if re.match(passwd_pattern, value)
+        else fr"satisfy regular expression pattern: {passwd_pattern}"
+    )
 
 
 def validate_short_name(value):
@@ -115,10 +126,14 @@ def validate_sso_password(value):
 def validate_subnet_ids(value):
     """Raise exception is subnet IDs fail to match constraints."""
     subnet_id_pattern = r"^(subnet-[0-9a-f]{8}|subnet-[0-9a-f]{17})$"
-    for subnet in value:
-        if not re.match(subnet_id_pattern, subnet):
-            return fr"satisfy regular expression pattern: {subnet_id_pattern}"
-    return ""
+    return next(
+        (
+            fr"satisfy regular expression pattern: {subnet_id_pattern}"
+            for subnet in value
+            if not re.match(subnet_id_pattern, subnet)
+        ),
+        "",
+    )
 
 
 def validate_user_name(value):

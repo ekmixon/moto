@@ -130,15 +130,14 @@ class ExpressionTokenizer(object):
         """If during parsing an unexpected token is encountered"""
         if len(self.token_list) == 0:
             near = ""
+        elif len(self.token_list) == 1:
+            near = self.token_list[-1].value
         else:
-            if len(self.token_list) == 1:
-                near = self.token_list[-1].value
-            else:
-                if self.token_list[-1].type == Token.WHITESPACE:
-                    # Last token was whitespace take 2nd last token value as well to help User orientate
-                    near = self.token_list[-2].value + self.token_list[-1].value
-                else:
-                    near = self.token_list[-1].value
+            near = (
+                self.token_list[-2].value + self.token_list[-1].value
+                if self.token_list[-1].type == Token.WHITESPACE
+                else self.token_list[-1].value
+            )
 
         problematic_token = self.staged_characters[0]
         raise InvalidTokenException(problematic_token, near + self.staged_characters)
@@ -154,9 +153,7 @@ class ExpressionTokenizer(object):
 
     @classmethod
     def make_list(cls, input_expression_str):
-        if cls.is_py2():
-            pass
-        else:
+        if not cls.is_py2():
             assert isinstance(input_expression_str, str)
 
         return ExpressionTokenizer(input_expression_str)._make_list()
@@ -217,7 +214,8 @@ class ExpressionTokenizer(object):
                     self.raise_unexpected_token()
                 else:
                     raise NotImplementedError(
-                        "Encountered character which was not implemented : " + character
+                        f"Encountered character which was not implemented : {character}"
                     )
+
         self.process_staged_characters()
         return self.token_list

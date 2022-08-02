@@ -198,7 +198,7 @@ INSTANCE_TYPE_OFFERINGS = {}
 for location_type in listdir(root / offerings_path):
     INSTANCE_TYPE_OFFERINGS[location_type] = {}
     for _region in listdir(root / offerings_path / location_type):
-        full_path = offerings_path + "/" + location_type + "/" + _region
+        full_path = f"{offerings_path}/{location_type}/{_region}"
         INSTANCE_TYPE_OFFERINGS[location_type][
             _region.replace(".json", "")
         ] = load_resource(__name__, full_path)
@@ -242,10 +242,11 @@ class StateReason(object):
 
 class TaggedEC2Resource(BaseModel):
     def get_tags(self, *args, **kwargs):
-        tags = []
-        if self.id:
-            tags = self.ec2_backend.describe_tags(filters={"resource-id": [self.id]})
-        return tags
+        return (
+            self.ec2_backend.describe_tags(filters={"resource-id": [self.id]})
+            if self.id
+            else []
+        )
 
     def add_tag(self, key, value):
         self.ec2_backend.create_tags([self.id], {key: value})
@@ -259,11 +260,7 @@ class TaggedEC2Resource(BaseModel):
 
         if filter_name.startswith("tag:"):
             tagname = filter_name.replace("tag:", "", 1)
-            for tag in tags:
-                if tag["key"] == tagname:
-                    return tag["value"]
-
-            return None
+            return next((tag["value"] for tag in tags if tag["key"] == tagname), None)
         elif filter_name == "tag-key":
             return [tag["key"] for tag in tags]
         elif filter_name == "tag-value":
@@ -329,16 +326,14 @@ class NetworkInterface(TaggedEC2Resource, CloudFormationModel):
                         self.ipv6_addresses.append(ip)
 
         if self.private_ip_addresses:
-            primary_selected = True if private_ip_address else False
+            primary_selected = bool(private_ip_address)
             for item in self.private_ip_addresses.copy():
                 if isinstance(item, str):
                     self.private_ip_addresses.remove(item)
                     self.private_ip_addresses.append(
-                        {
-                            "Primary": True if not primary_selected else False,
-                            "PrivateIpAddress": item,
-                        }
+                        {"Primary": not primary_selected, "PrivateIpAddress": item}
                     )
+
                     primary_selected = True
 
         if not self.private_ip_address:
@@ -355,13 +350,11 @@ class NetworkInterface(TaggedEC2Resource, CloudFormationModel):
                 {"Primary": True, "PrivateIpAddress": self.private_ip_address}
             )
 
-        secondary_ips = kwargs.get("secondary_ips_count", None)
-        if secondary_ips:
-            ips = [
+        if secondary_ips := kwargs.get("secondary_ips_count", None):
+            if ips := [
                 random_private_ip(self.subnet.cidr_block)
-                for index in range(0, int(secondary_ips))
-            ]
-            if ips:
+                for _ in range(int(secondary_ips))
+            ]:
                 self.private_ip_addresses.extend(
                     [{"Primary": False, "PrivateIpAddress": ip} for ip in ips]
                 )
@@ -393,8 +386,7 @@ class NetworkInterface(TaggedEC2Resource, CloudFormationModel):
                 if group:
                     self._group_set.append(group)
         if not group_ids:
-            group = self.ec2_backend.get_default_security_group(vpc.id)
-            if group:
+            if group := self.ec2_backend.get_default_security_group(vpc.id):
                 self._group_set.append(group)
 
     @property
@@ -432,8 +424,7 @@ class NetworkInterface(TaggedEC2Resource, CloudFormationModel):
         security_group_ids = properties.get("SecurityGroups", [])
 
         ec2_backend = ec2_backends[region_name]
-        subnet_id = properties.get("SubnetId")
-        if subnet_id:
+        if subnet_id := properties.get("SubnetId"):
             subnet = ec2_backend.get_subnet(subnet_id)
         else:
             subnet = None
@@ -441,13 +432,12 @@ class NetworkInterface(TaggedEC2Resource, CloudFormationModel):
         private_ip_address = properties.get("PrivateIpAddress", None)
         description = properties.get("Description", None)
 
-        network_interface = ec2_backend.create_network_interface(
+        return ec2_backend.create_network_interface(
             subnet,
             private_ip_address,
             group_ids=security_group_ids,
             description=description,
         )
-        return network_interface
 
     def stop(self):
         if self.public_ip_auto_assign:
@@ -543,10 +533,10 @@ class NetworkInterfaceBackend(object):
         raise InvalidNetworkInterfaceIdError(eni_id)
 
     def delete_network_interface(self, eni_id):
-        deleted = self.enis.pop(eni_id, None)
-        if not deleted:
+        if deleted := self.enis.pop(eni_id, None):
+            return deleted
+        else:
             raise InvalidNetworkInterfaceIdError(eni_id)
-        return deleted
 
     def describe_network_interfaces(self, filters=None):
         # Note: This is only used in EC2Backend#do_resources_exist
@@ -588,8 +578,9 @@ class NetworkInterfaceBackend(object):
         self, eni_id, group_ids, source_dest_check=None, description=None
     ):
         eni = self.get_network_interface(eni_id)
-        groups = [self.get_security_group_from_id(group_id) for group_id in group_ids]
-        if groups:
+        if groups := [
+            self.get_security_group_from_id(group_id) for group_id in group_ids
+        ]:
             eni._group_set = groups
         if source_dest_check in [True, False]:
             eni.source_dest_check = source_dest_check
@@ -603,9 +594,7 @@ class NetworkInterfaceBackend(object):
         if eni_ids:
             enis = [eni for eni in enis if eni.id in eni_ids]
             if len(enis) != len(eni_ids):
-                invalid_id = list(
-                    set(eni_ids).difference(set([eni.id for eni in enis]))
-                )[0]
+                invalid_id = list(set(eni_ids).difference({eni.id for eni in enis}))[0]
                 raise InvalidNetworkInterfaceIdError(invalid_id)
 
         return generic_filter(filters, enis)
@@ -702,7 +691,7 @@ class Instance(TaggedEC2Resource, BotoInstance, CloudFormationModel):
         self.security_groups = security_groups
         self.instance_type = kwargs.get("instance_type", "m1.small")
         self.region_name = kwargs.get("region_name", "us-east-1")
-        placement = kwargs.get("placement", None)
+        placement = kwargs.get("placement")
         self.subnet_id = kwargs.get("subnet_id")
         in_ec2_classic = not bool(self.subnet_id)
         self.key_name = kwargs.get("key_name")
@@ -715,7 +704,7 @@ class Instance(TaggedEC2Resource, BotoInstance, CloudFormationModel):
             "instance_initiated_shutdown_behavior", "stop"
         )
         self.sriov_net_support = "simple"
-        self._spot_fleet_id = kwargs.get("spot_fleet_id", None)
+        self._spot_fleet_id = kwargs.get("spot_fleet_id")
         self.associate_public_ip = kwargs.get("associate_public_ip", False)
         if in_ec2_classic:
             # If we are in EC2-Classic, autoassign a public IP
@@ -739,10 +728,13 @@ class Instance(TaggedEC2Resource, BotoInstance, CloudFormationModel):
 
         # handle weird bug around user_data -- something grabs the repr(), so
         # it must be clean
-        if isinstance(self.user_data, list) and len(self.user_data) > 0:
-            if isinstance(self.user_data[0], bytes):
-                # string will have a "b" prefix -- need to get rid of it
-                self.user_data[0] = self.user_data[0].decode("utf-8")
+        if (
+            isinstance(self.user_data, list)
+            and len(self.user_data) > 0
+            and isinstance(self.user_data[0], bytes)
+        ):
+            # string will have a "b" prefix -- need to get rid of it
+            self.user_data[0] = self.user_data[0].decode("utf-8")
 
         if self.subnet_id:
             subnet = ec2_backend.get_subnet(self.subnet_id)
@@ -754,7 +746,7 @@ class Instance(TaggedEC2Resource, BotoInstance, CloudFormationModel):
         elif placement:
             self._placement.zone = placement
         else:
-            self._placement.zone = ec2_backend.region_name + "a"
+            self._placement.zone = f"{ec2_backend.region_name}a"
 
         self.block_device_mapping = BlockDeviceMapping()
 
@@ -771,9 +763,7 @@ class Instance(TaggedEC2Resource, BotoInstance, CloudFormationModel):
         if self.subnet_id:
             subnet = self.ec2_backend.get_subnet(self.subnet_id)
             return subnet.vpc_id
-        if self.nics and 0 in self.nics:
-            return self.nics[0].subnet.vpc_id
-        return None
+        return self.nics[0].subnet.vpc_id if self.nics and 0 in self.nics else None
 
     def __del__(self):
         try:

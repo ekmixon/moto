@@ -195,9 +195,11 @@ class FakeReplicationTask(BaseModel):
         return self
 
 
-dms_backends = {}
-for region in Session().get_available_regions("dms"):
-    dms_backends[region] = DatabaseMigrationServiceBackend()
+dms_backends = {
+    region: DatabaseMigrationServiceBackend()
+    for region in Session().get_available_regions("dms")
+}
+
 for region in Session().get_available_regions("dms", partition_name="aws-us-gov"):
     dms_backends[region] = DatabaseMigrationServiceBackend()
 for region in Session().get_available_regions("dms", partition_name="aws-cn"):

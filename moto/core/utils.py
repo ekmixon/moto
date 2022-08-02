@@ -47,10 +47,7 @@ def underscores_to_camelcase(argument):
     previous_was_underscore = False
     for char in argument:
         if char != "_":
-            if previous_was_underscore:
-                result += char.upper()
-            else:
-                result += char
+            result += char.upper() if previous_was_underscore else char
         previous_was_underscore = char == "_"
     return result
 
@@ -72,7 +69,7 @@ def method_names_from_class(clazz):
 
 def get_random_hex(length=8):
     chars = list(range(10)) + ["a", "b", "c", "d", "e", "f"]
-    return "".join(str(random.choice(chars)) for x in range(length))
+    return "".join(str(random.choice(chars)) for _ in range(length))
 
 
 def get_random_message_id():
@@ -148,11 +145,7 @@ class convert_flask_to_httpretty_response(object):
         except ClientError as exc:
             result = 400, {}, exc.response["Error"]["Message"]
         # result is a status, headers, response tuple
-        if len(result) == 3:
-            status, headers, content = result
-        else:
-            status, headers, content = 200, {}, result
-
+        status, headers, content = result if len(result) == 3 else (200, {}, result)
         response = Response(response=content, status=status, headers=headers)
         if request.method == "HEAD" and "content-length" in headers:
             response.headers["Content-Length"] = headers["content-length"]
@@ -235,7 +228,7 @@ def gen_amz_crc32(response, headerdict=None):
 
 
 def gen_amzn_requestid_long(headerdict=None):
-    req_id = "".join([random.choice(REQUEST_ID_LONG) for _ in range(0, 52)])
+    req_id = "".join([random.choice(REQUEST_ID_LONG) for _ in range(52)])
 
     if headerdict is not None and isinstance(headerdict, dict):
         headerdict.update({"x-amzn-requestid": req_id})
@@ -312,7 +305,7 @@ def path_url(url):
     if not path:
         path = "/"
     if parsed_url.query:
-        path = path + "?" + parsed_url.query
+        path = f"{path}?{parsed_url.query}"
     return path
 
 
@@ -322,7 +315,7 @@ def tags_from_query_string(
     response_values = {}
     for key, value in querystring_dict.items():
         if key.startswith(prefix) and key.endswith(key_suffix):
-            tag_index = key.replace(prefix + ".", "").replace("." + key_suffix, "")
+            tag_index = key.replace(f"{prefix}.", "").replace(f".{key_suffix}", "")
             tag_key = querystring_dict.get(
                 "{prefix}.{index}.{key_suffix}".format(
                     prefix=prefix, index=tag_index, key_suffix=key_suffix,
@@ -414,7 +407,4 @@ def aws_api_matches(pattern, string):
     # aws api seems to anchor
     anchored_pattern = f"^{pattern}$"
 
-    if re.match(anchored_pattern, str(string)):
-        return True
-    else:
-        return False
+    return bool(re.match(anchored_pattern, str(string)))
